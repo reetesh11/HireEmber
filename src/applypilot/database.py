@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import DB_PATH
+from applypilot.config import DB_PATH, is_linkedin_url
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -333,6 +333,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     Args:
         conn: Database connection.
         jobs: List of job dicts with keys: url, title, salary, description, location.
+            Jobs whose url or application_url is on LinkedIn are skipped.
         site: Source site name (e.g. "RemoteOK", "Dice").
         strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
 
@@ -346,6 +347,8 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     for job in jobs:
         url = job.get("url")
         if not url:
+            continue
+        if is_linkedin_url(url) or is_linkedin_url(job.get("application_url")):
             continue
         try:
             conn.execute(

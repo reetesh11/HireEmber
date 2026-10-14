@@ -1,4 +1,7 @@
-"""JobSpy-based job discovery: searches Indeed, LinkedIn, Glassdoor, ZipRecruiter.
+"""JobSpy-based job discovery: searches Indeed, Glassdoor, ZipRecruiter, Google.
+
+LinkedIn is never scraped: every site list goes through
+``config.resolve_jobspy_sites`` and LinkedIn URLs are never stored.
 
 Uses python-jobspy to scrape multiple job boards, deduplicates results,
 parses salary ranges, and stores everything in the ApplyPilot database.
@@ -12,10 +15,17 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
-from jobspy import scrape_jobs
+try:
+    from jobspy import scrape_jobs
+except ImportError:  # python-jobspy is installed separately (pip install --no-deps)
+    def scrape_jobs(**kwargs):
+        raise ImportError(
+            "python-jobspy is not installed: pip install --no-deps python-jobspy "
+            "&& pip install pydantic tls-client requests markdownify regex"
+        )
 
 from applypilot import config
-from applypilot.database import get_connection, init_db, store_jobs
+from applypilot.database import get_connection, init_db
 
 log = logging.getLogger(__name__)
 
@@ -128,8 +138,13 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         if not url or url == "nan":
             continue
 
+        # Extract apply URL if JobSpy provided it
+        apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
+
+        if config.is_linkedin_url(url) or config.is_linkedin_url(apply_url):
+            continue
+
         title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
-        company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
 
         # Build salary string from min/max
@@ -162,9 +177,6 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         if description and len(description) > 200:
             full_description = description
             detail_scraped_at = now
-
-        # Extract apply URL if JobSpy provided it
-        apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
 
         try:
             conn.execute(
@@ -225,8 +237,6 @@ def _run_one_search(
             kwargs["is_remote"] = True
         if proxy_config:
             kwargs["proxies"] = [proxy_config["jobspy"]]
-        if "linkedin" in other_sites:
-            kwargs["linkedin_fetch_description"] = True
         try:
             df = _scrape_with_retry(kwargs, max_retries=max_retries)
             all_dfs.append(df)
@@ -300,8 +310,10 @@ def search_jobs(
     country_indeed: str = "usa",
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
-    if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+    sites = config.resolve_jobspy_sites(sites)
+    if not sites:
+        log.error("No JobSpy sites configured")
+        return {"error": "no JobSpy sites configured", "total": 0, "new": 0, "existing": 0}
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
@@ -323,9 +335,6 @@ def search_jobs(
 
     if proxy_config:
         kwargs["proxies"] = [proxy_config["jobspy"]]
-
-    if "linkedin" in sites:
-        kwargs["linkedin_fetch_description"] = True
 
     try:
         df = scrape_jobs(**kwargs)
@@ -368,8 +377,12 @@ def _full_crawl(
     max_retries: int = 2,
 ) -> dict:
     """Run all search queries from search config across all locations."""
-    if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+    sites = config.resolve_jobspy_sites(sites)
+    if not sites:
+        log.error("No JobSpy sites configured; skipping JobSpy crawl")
+        conn = init_db()
+        db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0}
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])

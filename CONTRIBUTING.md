@@ -25,7 +25,7 @@ This installs ApplyPilot in editable mode with all development dependencies (pyt
 ```bash
 applypilot --version
 pytest tests/ -v
-ruff check src/
+ruff check .
 ```
 
 ## How to Contribute
@@ -98,10 +98,10 @@ ApplyPilot uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
 ```bash
 # Check for issues
-ruff check src/
+ruff check .
 
 # Auto-fix what can be fixed
-ruff check src/ --fix
+ruff check . --fix
 
 # Format code
 ruff format src/

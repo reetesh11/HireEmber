@@ -2,6 +2,10 @@
 
 > **⚠️ ApplyPilot** is the original open-source project, created by [Pickle-Pixel](https://github.com/Pickle-Pixel) and first published on GitHub on **February 17, 2026**. We are **not affiliated** with applypilot.app, useapplypilot.com, or any other product using the "ApplyPilot" name. These sites are **not associated with this project** and may misrepresent what they offer. If you're looking for the autonomous, open-source job application agent — you're in the right place.
 
+## Fork notice
+
+HireEmber/OpenApply is a fork of [ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot) by [Pickle-Pixel](https://github.com/Pickle-Pixel). It is distributed under the same license, AGPL-3.0 (GNU Affero General Public License v3.0), and the original copyright notices and attribution are kept intact. The rest of this README is the upstream ApplyPilot documentation, adapted where the fork differs.
+
 # ApplyPilot
 
 **Applied to 1,000 jobs in 2 days. Fully autonomous. Open source.**

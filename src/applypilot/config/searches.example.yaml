@@ -82,13 +82,12 @@ location:
     - "India"
     - "Philippines"
 
-# Country for Indeed/LinkedIn/Google Jobs searches
+# Country for Indeed/Google Jobs searches
 country: "USA"
 
 # JobSpy source boards (all available options shown)
 boards:
   - indeed
-  - linkedin
   - glassdoor
   - zip_recruiter
   - google

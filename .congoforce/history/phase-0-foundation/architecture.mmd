@@ -1,0 +1,18 @@
+flowchart LR
+  cli[cli.py apply / doctor]:::changed --> doctor[doctor.py]:::new
+  cli --> launcher[apply/launcher.py main / worker_loop / gen_prompt]:::changed
+  doctor --> cfg[config.py is_linkedin_url / resolve_jobspy_sites]:::changed
+  doctor --> workday[discovery/workday.py load_employers]
+  launcher --> cfg
+  launcher -->|only non-LinkedIn jobs| chrome[apply/chrome.py launch_chrome]
+  launcher -->|only non-LinkedIn jobs| claude[claude subprocess run_job]
+  jobspy[discovery/jobspy.py search_jobs / _full_crawl / store_jobspy_results]:::changed --> cfg
+  jobspy -->|site_name without linkedin| scrape[python-jobspy scrape_jobs]
+  jobspy --> db[(jobs table)]
+  dbmod[database.py store_jobs]:::changed --> db
+  workday:::changed --> db
+  smart[discovery/smartextract.py]:::changed --> db
+  dbmod --> cfg
+  ci[.github/workflows/ci.yml]:::changed --> tests[tests/ pytest + ruff check .]:::new
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

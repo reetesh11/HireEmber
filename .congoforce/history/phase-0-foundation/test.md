@@ -1,0 +1,30 @@
+# Acceptance test plan — Add test harness and CI, block LinkedIn, extend doctor checks
+
+## Coverage
+| Criterion | File | Test names | Red because |
+| --- | --- | --- | --- |
+| AC-1 | `tests/acceptance/test_ac1_lint.py` | `test_ruff_check_passes_on_whole_repo` | the repo has existing ruff errors, so `ruff check .` exits 1 |
+| AC-1 (unchanged) | `tests/acceptance/test_ac1_harness.py` | `test_conftest_isolates_app_dir_from_home`, `test_dev_extras_include_pytest_and_ruff` | green now: the harness ships with these tests and the dev extras already list pytest and ruff |
+| AC-2 | `tests/acceptance/test_ac2_ci_triggers.py` | `test_ci_triggers_on_push_and_pull_request`, `test_ci_lint_step_runs_ruff_on_whole_repo`, `test_ci_test_step_runs_pytest_on_tests_with_src_on_pythonpath` | ci.yml has only `workflow_dispatch`, lints `src/` only, and the pytest step has no `PYTHONPATH=src` |
+| AC-2 (unchanged) | `tests/acceptance/test_ac2_ci_unchanged.py` | `test_ci_matrix_covers_python_311_312_313`, `test_ci_failures_are_not_masked` | green now; must stay green |
+| AC-3 | `tests/acceptance/test_ac3_jobspy_sites.py` | `test_search_jobs_default_sites_exclude_linkedin`, `test_full_crawl_default_sites_exclude_linkedin`, `test_search_jobs_drops_explicitly_configured_linkedin`, `test_example_search_config_boards_exclude_linkedin` | `applypilot.discovery.jobspy` cannot be imported without python-jobspy (`No module named 'jobspy'`), but the contract requires it to import. The defaults still include `linkedin`, and the example YAML lists `linkedin` under `boards` |
+| AC-4 | `tests/acceptance/test_ac4_store_skips_linkedin.py` | `test_linkedin_url_detection_uses_host`, `test_store_jobspy_results_skips_linkedin_job_urls`, `test_store_jobspy_results_skips_linkedin_direct_apply_url`, `test_store_jobs_skips_linkedin_url_and_application_url`, `test_workday_store_results_skips_linkedin_url` | `is_linkedin_url` is missing; the jobspy module cannot be imported; `store_jobs` returns (3, 0) and workday `store_results` returns (2, 0) instead of (1, 0) |
+| AC-5 | `tests/acceptance/test_ac5_apply_rejects_linkedin.py` | `test_cli_apply_rejects_linkedin_url[apply]`, `[apply-gen]`, `test_launcher_main_rejects_linkedin_url`, `test_gen_prompt_rejects_linkedin_url_before_db`, `test_worker_loop_blocks_queued_linkedin_job` | the CLI prints the tier error, not the LinkedIn message, and bootstraps the DB first; `config.LinkedInBlockedError` is missing; `worker_loop` launches Chrome and runs the job (returns (0, 1)) |
+| AC-6 | `tests/acceptance/test_ac6_doctor.py` | `test_doctor_prints_a_status_line_for_each_required_check`, `test_run_checks_returns_all_checks_in_cli_order`, `test_chrome_hidden_reports_missing`, `test_chrome_found_reports_ok`, `test_node_below_18_or_absent_reports_missing[node-16]`, `[node-absent]`, `test_node_18_or_later_reports_ok`, `test_empty_path_reports_node_and_claude_missing`, `test_python_version_check`, `test_database_check_missing_then_ok`, `test_database_check_defaults_to_config_db_path`, `test_sources_check_lists_boards_without_linkedin` | doctor has no Python/Database/Job sources lines and prints `Node.js (npx)`, not `Node.js`; the module `applypilot.doctor` does not exist |
+| AC-7 (harness) | `tests/acceptance/test_ac7_fixture_form.py` | `test_fixture_form_is_served_locally_with_required_fields` | green: the fixture and server are part of the frozen harness this stage writes |
+| AC-8 | `tests/acceptance/test_ac8_readme_fork_notice.py` | `test_readme_has_fork_notice_section` | README has no `## Fork notice` section |
+| AC-8 (unchanged) | `tests/acceptance/test_ac8_readme_unchanged.py` | `test_readme_keeps_license_section_and_upstream_attribution` | green now; must stay green |
+| AC-9 | `tests/acceptance/test_ac9_traceability.py` | `test_traceability_table_maps_each_requirement_to_existing_tests` | `docs/traceability.md` does not exist |
+
+## Approach
+- Harness: `tests/conftest.py` sets `APPLYPILOT_DIR` to a fresh temp dir and removes `CHROME_PATH` at import time, before any `applypilot` import. It provides `fixture_form_server` (stdlib `ThreadingHTTPServer` on `127.0.0.1:0` serving `tests/fixtures/`, session-scoped) and `isolated_db` (monkeypatches `applypilot.database.DB_PATH` and `applypilot.config.DB_PATH` to a `tmp_path` file and does not create it). The fixture form is `tests/fixtures/forms/basic_form.html`.
+- Tests only use the public surfaces from the interface contract: `config.is_linkedin_url`, `config.LinkedInBlockedError`, `jobspy.search_jobs`, `_full_crawl`, `store_jobspy_results`, `database.store_jobs`, `workday.store_results`, `launcher.main`, `gen_prompt`, `worker_loop`, the `applypilot.doctor` functions, and the Typer `app` through `CliRunner`. The code under test is never mocked. The only stubs are the stub points the contract names: `jobspy.scrape_jobs`, `launcher.launch_chrome`, `launcher.run_job`, `launcher.subprocess.Popen`, `config.get_chrome_path` and `doctor.get_node_version`.
+- No test uses the network. Static tests read `ci.yml` (with PyYAML, handling `on` parsed as `True`), `pyproject.toml`, `README.md`, `docs/traceability.md` and `searches.example.yaml`.
+- The AC-5 module unregisters the launcher's atexit Chrome/CDP-port sweep, so a test run never kills the developer's browser. The test that calls `launcher.main` restores the SIGINT handler afterwards.
+- The AC-1 lint test runs `sys.executable -m ruff check .`, so ruff must be installed in the test interpreter (it is in the dev extras).
+
+## Untestable criteria
+- AC-1 (partial): "`pytest tests/` exits 0" cannot be checked from inside the suite. The verifier checks it with the full test command.
+
+## Open questions
+- The standards `test` command uses `python3`. On this machine that is system Python 3.9 without the project dependencies. The red check was previewed with `PATH` pointing at a scratch Python 3.11 venv that has the project's dependencies, pytest and ruff, and without python-jobspy. The Gate 2 red check and Verify need a Python 3.11+ environment with the dev extras (the bootstrap task is expected to set this up in the worktree standards).

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Basic application form</title>
+</head>
+<body>
+  <h1>Apply for Software Engineer</h1>
+  <form id="application" action="/submit" method="post" enctype="multipart/form-data">
+    <label for="full_name">Full name</label>
+    <input type="text" id="full_name" name="full_name" required>
+
+    <label for="email">Email</label>
+    <input type="text" id="email" name="email" required>
+
+    <label for="resume">Resume</label>
+    <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx">
+
+    <button type="submit" id="submit">Submit application</button>
+  </form>
+</body>
+</html>
