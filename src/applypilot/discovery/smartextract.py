@@ -101,6 +101,8 @@ def _store_jobs_filtered(
         url = job.get("url")
         if not url:
             continue
+        if config.is_linkedin_url(url) or config.is_linkedin_url(job.get("application_url")):
+            continue
         if not _location_ok(job.get("location"), accept_locs, reject_locs):
             filtered += 1
             continue

@@ -1,9 +1,13 @@
 """ApplyPilot configuration: paths, platform detection, user data."""
 
+import logging
 import os
 import platform
 import shutil
 from pathlib import Path
+from urllib.parse import urlsplit
+
+log = logging.getLogger(__name__)
 
 # User data directory — all user-specific files live here
 APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
@@ -130,6 +134,56 @@ def is_manual_ats(url: str | None) -> bool:
     domains = sites_cfg.get("manual_ats", [])
     url_lower = url.lower()
     return any(domain in url_lower for domain in domains)
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn policy — LinkedIn is never scraped, stored or applied to
+# ---------------------------------------------------------------------------
+
+DEFAULT_JOBSPY_SITES: tuple[str, ...] = ("indeed", "zip_recruiter")
+
+
+class LinkedInBlockedError(ValueError):
+    """Raised when an operation targets a LinkedIn job URL."""
+
+    def __init__(self, url: str):
+        self.url = url
+        super().__init__(f"LinkedIn job URLs are not supported: {url}")
+
+
+def is_linkedin_url(url: str | None) -> bool:
+    """True if the URL's host is linkedin.com or a subdomain of it.
+
+    URLs without a scheme are parsed as https. None, "" and "nan" give False.
+    """
+    if not url:
+        return False
+    text = str(url).strip()
+    if not text or text.lower() == "nan":
+        return False
+    if "://" not in text and not text.startswith("//"):
+        text = "https://" + text
+    elif text.startswith("//"):
+        text = "https:" + text
+    try:
+        host = (urlsplit(text).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == "linkedin.com" or host.endswith(".linkedin.com")
+
+
+def resolve_jobspy_sites(sites: list[str] | None) -> list[str]:
+    """Return the JobSpy boards to scrape, with LinkedIn always removed.
+
+    None gives DEFAULT_JOBSPY_SITES. Any configured "linkedin" entry is
+    dropped with a warning. The result may be empty.
+    """
+    if sites is None:
+        return list(DEFAULT_JOBSPY_SITES)
+    kept = [s for s in sites if str(s).strip().lower() != "linkedin"]
+    if len(kept) != len(sites):
+        log.warning("LinkedIn is not supported as a job source; removed it from the JobSpy sites %s", list(sites))
+    return kept
 
 
 def load_blocked_sites() -> tuple[set[str], list[str]]:

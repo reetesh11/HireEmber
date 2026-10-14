@@ -314,6 +314,8 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                 url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
         if not url:
             continue
+        if config.is_linkedin_url(url):
+            continue
 
         description = job.get("full_description", "")
         short_desc = description[:500] if description else None
