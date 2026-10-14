@@ -216,7 +216,12 @@ def gen_prompt(target_url: str, min_score: int = 7,
 
     Returns:
         Path to the generated prompt file, or None if no job found.
+
+    Raises:
+        LinkedInBlockedError: target_url is a LinkedIn URL.
     """
+    if config.is_linkedin_url(target_url):
+        raise config.LinkedInBlockedError(target_url)
     job = acquire_job(target_url=target_url, min_score=min_score, worker_id=worker_id)
     if not job:
         return None
@@ -596,6 +601,16 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 
         empty_polls = 0
 
+        if config.is_linkedin_url(job.get("url")) or config.is_linkedin_url(job.get("application_url")):
+            mark_result(job["url"], "failed", "linkedin_blocked: LinkedIn jobs are not supported",
+                        permanent=True)
+            add_event(f"[W{worker_id}] Rejected LinkedIn job")
+            logger.warning("Worker %d rejected LinkedIn job (LinkedIn jobs are not supported): %s",
+                           worker_id, job["url"][:80])
+            if target_url:
+                break
+            continue
+
         chrome_proc = None
         try:
             add_event(f"[W{worker_id}] Launching Chrome...")
@@ -666,7 +681,13 @@ def main(limit: int = 1, target_url: str | None = None,
         continuous: Run forever, polling for new jobs.
         poll_interval: Seconds between DB polls when queue is empty.
         workers: Number of parallel workers (default 1).
+
+    Raises:
+        LinkedInBlockedError: target_url is a LinkedIn URL.
     """
+    if config.is_linkedin_url(target_url):
+        raise config.LinkedInBlockedError(target_url)
+
     global POLL_INTERVAL
     POLL_INTERVAL = poll_interval
     _stop_event.clear()

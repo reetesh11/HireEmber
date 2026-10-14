@@ -159,6 +159,12 @@ def apply(
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
+    from applypilot.config import is_linkedin_url
+
+    if url and is_linkedin_url(url):
+        console.print(f"[red]LinkedIn job URLs are not supported:[/red] {url}", soft_wrap=True)
+        raise typer.Exit(code=1)
+
     _bootstrap()
 
     from applypilot.config import check_tier, PROFILE_PATH as _profile_path
