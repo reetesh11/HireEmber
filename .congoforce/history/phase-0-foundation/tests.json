@@ -1,0 +1,94 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_ac1_lint.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "`python -m ruff check .` exits 0 at the repo root"
+    },
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_ac1_harness.py",
+      "tests": 2,
+      "expect_red": false,
+      "description": "tests/conftest.py isolates APPLYPILOT_DIR (config.APP_DIR/DB_PATH under a temp dir, not ~/.applypilot) and unsets CHROME_PATH; pyproject dev extras include pytest and ruff"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_ac2_ci_triggers.py",
+      "tests": 3,
+      "expect_red": true,
+      "description": "ci.yml triggers on push and pull_request; lint step runs `ruff check .` (not src/); test step runs pytest on tests/ with PYTHONPATH=src"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_ac2_ci_unchanged.py",
+      "tests": 2,
+      "expect_red": false,
+      "description": "unchanged: matrix keeps Python 3.11/3.12/3.13; no continue-on-error and no `|| true`"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_ac3_jobspy_sites.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "with a stubbed scrape_jobs, search_jobs and _full_crawl with sites=None pass site_name ['indeed','zip_recruiter'] (no linkedin, no linkedin_fetch_description); explicitly configured linkedin is dropped; searches.example.yaml boards has no linkedin and keeps indeed/glassdoor/zip_recruiter/google"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_ac4_store_skips_linkedin.py",
+      "tests": 5,
+      "expect_red": true,
+      "description": "is_linkedin_url host semantics; store_jobspy_results, database.store_jobs and workday.store_results skip rows whose URL or application URL is on LinkedIn and store only the non-LinkedIn row (temp SQLite DB)"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_ac5_apply_rejects_linkedin.py",
+      "tests": 5,
+      "expect_red": true,
+      "description": "CLI `apply --url <linkedin>` (with and without --gen) exits 1 with 'LinkedIn job URLs are not supported: <url>' before the DB is created; launcher.main and gen_prompt raise LinkedInBlockedError; worker_loop marks a queued LinkedIn job failed/linkedin_blocked/99 and returns (0, 0); launch_chrome, run_job and subprocess.Popen are never called"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_ac6_doctor.py",
+      "tests": 12,
+      "expect_red": true,
+      "description": "doctor prints a status line for Python, Chrome/Chromium, Node.js, Claude Code CLI, Database, Job sources; run_checks order; Chrome MISSING when get_chrome_path raises; Node MISSING below 18, when absent and with PATH=''; Python 3.11+ check; Database MISSING/OK without creating the file; Job sources note without linkedin"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_ac7_fixture_form.py",
+      "tests": 1,
+      "expect_red": false,
+      "description": "harness written with the tests: fixture_form_server serves tests/fixtures/forms/basic_form.html from 127.0.0.1; it has a form with text input, file input and submit button and no external resources"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_ac8_readme_fork_notice.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "README has '## Fork notice' mentioning fork, ApplyPilot, https://github.com/Pickle-Pixel/ApplyPilot and AGPL-3.0"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_ac8_readme_unchanged.py",
+      "tests": 1,
+      "expect_red": false,
+      "description": "unchanged: README keeps '## License' (GNU AGPL v3.0) and the Pickle-Pixel attribution"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_ac9_traceability.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "docs/traceability.md table '| Requirement | Description | Tests |' has rows for FR-DIS-2, SAF-4, FR-CLI-2, NFR-1, NFR-10, NFR-11, each naming existing paths under tests/; NFR-1 and NFR-11 also name .github/workflows/ci.yml"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-1",
+      "reason": "The part 'PYTHONPATH=src python3 -m pytest tests/ exits 0' cannot be asserted from inside the suite itself (it would recurse). The verify stage's full test run checks it."
+    }
+  ]
+}
