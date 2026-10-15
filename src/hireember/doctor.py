@@ -1,4 +1,4 @@
-"""Setup diagnostics for ``applypilot doctor``.
+"""Setup diagnostics for ``hireember doctor``.
 
 Each check is a small function returning a :class:`Check` record, so tests
 can call checks directly and the CLI only renders them.
@@ -92,7 +92,7 @@ def check_database(db_path: str | Path | None = None) -> Check:
     """The jobs database exists and opens read-only. Never creates the file."""
     path = Path(db_path if db_path is not None else config.DB_PATH)
     if not path.exists():
-        return Check("Database", "MISSING", f"{path} not found — run 'applypilot init' or 'applypilot run'")
+        return Check("Database", "MISSING", f"{path} not found — run 'hireember init' or 'hireember run'")
     try:
         conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
         try:
@@ -128,7 +128,7 @@ def check_sources(search_cfg: dict | None = None) -> Check:
 def _check_profile() -> Check:
     if config.PROFILE_PATH.exists():
         return Check("profile.json", "OK", str(config.PROFILE_PATH))
-    return Check("profile.json", "MISSING", "Run 'applypilot init' to create")
+    return Check("profile.json", "MISSING", "Run 'hireember init' to create")
 
 
 def _check_resume() -> Check:
@@ -136,13 +136,13 @@ def _check_resume() -> Check:
         return Check("resume.txt", "OK", str(config.RESUME_PATH))
     if config.RESUME_PDF_PATH.exists():
         return Check("resume.txt", "WARN", "Only PDF found — plain-text needed for AI stages")
-    return Check("resume.txt", "MISSING", "Run 'applypilot init' to add your resume")
+    return Check("resume.txt", "MISSING", "Run 'hireember init' to add your resume")
 
 
 def _check_search_config() -> Check:
     if config.SEARCH_CONFIG_PATH.exists():
         return Check("searches.yaml", "OK", str(config.SEARCH_CONFIG_PATH))
-    return Check("searches.yaml", "WARN", "Will use example config — run 'applypilot init'")
+    return Check("searches.yaml", "WARN", "Will use example config — run 'hireember init'")
 
 
 def _check_jobspy() -> Check:
@@ -161,7 +161,7 @@ def _check_llm() -> Check:
         return Check("LLM API key", "OK", f"OpenAI ({os.environ.get('LLM_MODEL', 'gpt-4o-mini')})")
     if os.environ.get("LLM_URL"):
         return Check("LLM API key", "OK", f"Local: {os.environ.get('LLM_URL')}")
-    return Check("LLM API key", "MISSING", "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')")
+    return Check("LLM API key", "MISSING", f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'hireember init')")
 
 
 def _check_capsolver() -> Check:

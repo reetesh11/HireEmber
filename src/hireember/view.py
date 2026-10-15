@@ -1,4 +1,4 @@
-"""ApplyPilot HTML Dashboard Generator.
+"""HireEmber HTML Dashboard Generator.
 
 Generates a self-contained HTML dashboard with:
   - Summary stats (total, enriched, scored, high-fit)
@@ -26,7 +26,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
     """Generate an HTML dashboard of all jobs with fit scores.
 
     Args:
-        output_path: Where to write the HTML file. Defaults to ~/.applypilot/dashboard.html.
+        output_path: Where to write the HTML file. Defaults to ~/.hireember/dashboard.html.
 
     Returns:
         Absolute path to the generated HTML file.
@@ -199,7 +199,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ApplyPilot Dashboard</title>
+<title>HireEmber Dashboard</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }}
@@ -300,7 +300,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
 </head>
 <body>
 
-<h1>ApplyPilot Dashboard</h1>
+<h1>HireEmber Dashboard</h1>
 <p class="subtitle">{total} jobs &middot; {scored} scored &middot; {high_fit} strong matches (7+)</p>
 
 <div class="summary">
@@ -398,7 +398,7 @@ def open_dashboard(output_path: str | None = None) -> None:
     """Generate the dashboard and open it in the default browser.
 
     Args:
-        output_path: Where to write the HTML file. Defaults to ~/.applypilot/dashboard.html.
+        output_path: Where to write the HTML file. Defaults to ~/.hireember/dashboard.html.
     """
     path = generate_dashboard(output_path)
     console.print("[dim]Opening in browser...[/dim]")

@@ -1,4 +1,4 @@
-"""ApplyPilot configuration: paths, platform detection, user data."""
+"""HireEmber configuration: paths, platform detection, user data."""
 
 import logging
 import os
@@ -138,7 +138,7 @@ def load_profile() -> dict:
     import json
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(
-            f"Profile not found at {PROFILE_PATH}. Run `applypilot init` first."
+            f"Profile not found at {PROFILE_PATH}. Run `hireember init` first."
         )
     return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
 
@@ -331,7 +331,7 @@ def check_tier(required: int, feature: str) -> None:
 
     missing: list[str] = []
     if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
-        missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
+        missing.append("LLM API key — run [bold]hireember init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
         if not shutil.which("claude"):
             missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")

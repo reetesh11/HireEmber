@@ -1,6 +1,6 @@
-"""ApplyPilot first-time setup wizard.
+"""HireEmber first-time setup wizard.
 
-Interactive flow that creates ~/.applypilot/ with:
+Interactive flow that creates ~/.hireember/ with:
   - resume.txt (and optionally resume.pdf)
   - profile.json
   - searches.yaml
@@ -79,7 +79,7 @@ def _setup_resume() -> None:
 
 def _setup_profile() -> dict:
     """Walk through profile questions and return a nested profile dict."""
-    console.print(Panel("[bold]Step 2: Profile[/bold]\nTell ApplyPilot about yourself. This powers scoring, tailoring, and auto-fill."))
+    console.print(Panel("[bold]Step 2: Profile[/bold]\nTell HireEmber about yourself. This powers scoring, tailoring, and auto-fill."))
 
     profile: dict = {}
 
@@ -205,7 +205,7 @@ def _setup_searches() -> None:
 
     # Build YAML content
     lines = [
-        "# ApplyPilot search configuration",
+        "# HireEmber search configuration",
         "# Edit this file to refine your job search queries.",
         "",
         "defaults:",
@@ -241,7 +241,7 @@ def _setup_ai_features() -> None:
     ))
 
     if not Confirm.ask("Enable AI scoring and resume tailoring?", default=True):
-        console.print("[dim]Discovery-only mode. You can configure AI later with [bold]applypilot init[/bold].[/dim]")
+        console.print("[dim]Discovery-only mode. You can configure AI later with [bold]hireember init[/bold].[/dim]")
         return
 
     console.print("Supported providers: [bold]Gemini[/bold] (recommended, free tier), OpenAI, local (Ollama/llama.cpp)")
@@ -251,7 +251,7 @@ def _setup_ai_features() -> None:
         default="gemini",
     )
 
-    env_lines = ["# ApplyPilot configuration", ""]
+    env_lines = ["# HireEmber configuration", ""]
 
     if provider == "gemini":
         api_key = Prompt.ask("Gemini API key (from aistudio.google.com)")
@@ -282,12 +282,12 @@ def _setup_auto_apply() -> None:
     """Configure autonomous job application (requires Claude Code CLI)."""
     console.print(Panel(
         "[bold]Step 5: Auto-Apply (optional)[/bold]\n"
-        "ApplyPilot can autonomously fill and submit job applications\n"
+        "HireEmber can autonomously fill and submit job applications\n"
         "using Claude Code as the browser agent."
     ))
 
     if not Confirm.ask("Enable autonomous job applications?", default=True):
-        console.print("[dim]You can apply manually using the tailored resumes ApplyPilot generates.[/dim]")
+        console.print("[dim]You can apply manually using the tailored resumes HireEmber generates.[/dim]")
         return
 
     # Check for Claude Code CLI
@@ -313,7 +313,7 @@ def _setup_auto_apply() -> None:
                     encoding="utf-8",
                 )
         else:
-            ENV_PATH.write_text(f"# ApplyPilot configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
+            ENV_PATH.write_text(f"# HireEmber configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
         console.print("[green]CapSolver key saved.[/green]")
     else:
         console.print("[dim]Skipped. Add CAPSOLVER_API_KEY to .env later if needed.[/dim]")
@@ -328,10 +328,10 @@ def run_wizard() -> None:
     console.print()
     console.print(
         Panel.fit(
-            "[bold green]ApplyPilot Setup Wizard[/bold green]\n\n"
+            "[bold green]HireEmber Setup Wizard[/bold green]\n\n"
             "This will create your configuration at:\n"
             f"  [cyan]{APP_DIR}[/cyan]\n\n"
-            "You can re-run this anytime with [bold]applypilot init[/bold].",
+            "You can re-run this anytime with [bold]hireember init[/bold].",
             border_style="green",
         )
     )
@@ -377,7 +377,7 @@ def run_wizard() -> None:
 
     unlock_hint = ""
     if tier == 1:
-        unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]applypilot init[/bold]).[/dim]"
+        unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]hireember init[/bold]).[/dim]"
     elif tier == 2:
         unlock_hint = "\n[dim]To unlock Tier 3: install Claude Code CLI + Chrome.[/dim]"
 

@@ -1,4 +1,4 @@
-"""ApplyPilot CLI — the main entry point."""
+"""HireEmber CLI — the main entry point."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ logging.basicConfig(
 
 app = typer.Typer(
     name="hireember",
-    help="AI-powered end-to-end job application pipeline.",
+    help="HireEmber — AI-powered end-to-end job application pipeline.",
     no_args_is_help=True,
 )
 console = Console()
@@ -62,7 +62,7 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """ApplyPilot — AI-powered end-to-end job application pipeline."""
+    """HireEmber — AI-powered end-to-end job application pipeline."""
 
 
 @app.command()
@@ -199,7 +199,7 @@ def apply(
     if not _profile_path.exists():
         console.print(
             "[red]Profile not found.[/red]\n"
-            "Run [bold]applypilot init[/bold] to create your profile first."
+            "Run [bold]hireember init[/bold] to create your profile first."
         )
         raise typer.Exit(code=1)
 
@@ -212,7 +212,7 @@ def apply(
         if ready == 0:
             console.print(
                 "[red]No tailored resumes ready.[/red]\n"
-                "Run [bold]applypilot run score tailor[/bold] first to prepare applications."
+                "Run [bold]hireember run score tailor[/bold] first to prepare applications."
             )
             raise typer.Exit(code=1)
 
@@ -271,7 +271,7 @@ def status() -> None:
 
     stats = get_stats()
 
-    console.print("\n[bold]ApplyPilot Pipeline Status[/bold]\n")
+    console.print("\n[bold]HireEmber Pipeline Status[/bold]\n")
 
     # Summary table
     summary = Table(title="Pipeline Overview", show_header=True, header_style="bold cyan")
@@ -353,7 +353,7 @@ def doctor() -> None:
 
     # --- Render results ---
     console.print()
-    console.print("[bold]ApplyPilot Doctor[/bold]\n")
+    console.print("[bold]HireEmber Doctor[/bold]\n")
 
     col_w = max(len(r.name) for r in results) + 2
     for r in results:
