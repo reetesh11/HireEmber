@@ -1,9 +1,10 @@
-"""Shared pytest harness for ApplyPilot.
+"""Shared pytest harness for HireEmber.
 
-Isolation rules (applied at import time, before any ``applypilot`` import):
+Isolation rules (applied at import time, before any ``hireember`` import):
 
-- ``APPLYPILOT_DIR`` points at a fresh temporary directory, so
-  ``applypilot.config`` never reads or writes the real ``~/.applypilot``.
+- ``HIREEMBER_DIR`` points at a fresh temporary directory, so
+  ``hireember.config`` never reads or writes the real ``~/.hireember``
+  (or a legacy data folder in the developer's home).
 - ``CHROME_PATH`` is removed so Chrome detection is not driven by the
   developer's shell.
 
@@ -27,8 +28,8 @@ from pathlib import Path
 
 import pytest
 
-_TEST_APP_DIR = tempfile.mkdtemp(prefix="applypilot-tests-")
-os.environ["APPLYPILOT_DIR"] = _TEST_APP_DIR
+_TEST_APP_DIR = tempfile.mkdtemp(prefix="hireember-tests-")
+os.environ["HIREEMBER_DIR"] = _TEST_APP_DIR
 os.environ.pop("CHROME_PATH", None)
 atexit.register(shutil.rmtree, _TEST_APP_DIR, True)
 
@@ -62,13 +63,13 @@ def fixture_form_server():
 def isolated_db(tmp_path, monkeypatch):
     """Point the default DB (database and config modules) at a temp file; yield its path.
 
-    The file is not created; call ``applypilot.database.init_db()`` if a schema is needed.
+    The file is not created; call ``hireember.database.init_db()`` if a schema is needed.
     """
-    import applypilot.config
-    import applypilot.database
+    import hireember.config
+    import hireember.database
 
-    db_path = tmp_path / "applypilot.db"
-    monkeypatch.setattr(applypilot.database, "DB_PATH", db_path)
-    monkeypatch.setattr(applypilot.config, "DB_PATH", db_path)
+    db_path = tmp_path / "hireember.db"
+    monkeypatch.setattr(hireember.database, "DB_PATH", db_path)
+    monkeypatch.setattr(hireember.config, "DB_PATH", db_path)
     yield db_path
-    applypilot.database.close_connection(db_path)
+    hireember.database.close_connection(db_path)

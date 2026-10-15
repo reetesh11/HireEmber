@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
-from applypilot.config import (
+from hireember.config import (
     APP_DIR,
     ENV_PATH,
     PROFILE_PATH,
@@ -360,7 +360,7 @@ def run_wizard() -> None:
     console.print()
 
     # Done — show tier status
-    from applypilot.config import get_tier, TIER_LABELS, TIER_COMMANDS
+    from hireember.config import get_tier, TIER_LABELS, TIER_COMMANDS
 
     tier = get_tier()
 

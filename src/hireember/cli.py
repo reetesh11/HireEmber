@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from applypilot import __version__
+from hireember import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 
 app = typer.Typer(
-    name="applypilot",
+    name="hireember",
     help="AI-powered end-to-end job application pipeline.",
     no_args_is_help=True,
 )
@@ -35,8 +35,8 @@ VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 
 def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
-    from applypilot.config import load_env, ensure_dirs
-    from applypilot.database import init_db
+    from hireember.config import load_env, ensure_dirs
+    from hireember.database import init_db
 
     load_env()
     ensure_dirs()
@@ -45,7 +45,7 @@ def _bootstrap() -> None:
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"[bold]applypilot[/bold] {__version__}")
+        console.print(f"[bold]hireember[/bold] {__version__}")
         raise typer.Exit()
 
 
@@ -68,7 +68,7 @@ def main(
 @app.command()
 def init() -> None:
     """Run the first-time setup wizard (profile, resume, search config)."""
-    from applypilot.wizard.init import run_wizard
+    from hireember.wizard.init import run_wizard
 
     run_wizard()
 
@@ -101,7 +101,7 @@ def run(
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
 
-    from applypilot.pipeline import run_pipeline
+    from hireember.pipeline import run_pipeline
 
     stage_list = stages if stages else ["all"]
 
@@ -117,7 +117,7 @@ def run(
     # Gate AI stages behind Tier 2
     llm_stages = {"score", "tailor", "cover"}
     if any(s in stage_list for s in llm_stages) or "all" in stage_list:
-        from applypilot.config import check_tier
+        from hireember.config import check_tier
         check_tier(2, "AI scoring/tailoring")
 
     # Validate the --validation flag value
@@ -159,7 +159,7 @@ def apply(
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
-    from applypilot.config import is_linkedin_url
+    from hireember.config import is_linkedin_url
 
     if url and is_linkedin_url(url):
         console.print(f"[red]LinkedIn job URLs are not supported:[/red] {url}", soft_wrap=True)
@@ -167,25 +167,25 @@ def apply(
 
     _bootstrap()
 
-    from applypilot.config import check_tier, PROFILE_PATH as _profile_path
-    from applypilot.database import get_connection
+    from hireember.config import check_tier, PROFILE_PATH as _profile_path
+    from hireember.database import get_connection
 
     # --- Utility modes (no Chrome/Claude needed) ---
 
     if mark_applied:
-        from applypilot.apply.launcher import mark_job
+        from hireember.apply.launcher import mark_job
         mark_job(mark_applied, "applied")
         console.print(f"[green]Marked as applied:[/green] {mark_applied}")
         return
 
     if mark_failed:
-        from applypilot.apply.launcher import mark_job
+        from hireember.apply.launcher import mark_job
         mark_job(mark_failed, "failed", reason=fail_reason)
         console.print(f"[yellow]Marked as failed:[/yellow] {mark_failed} ({fail_reason or 'manual'})")
         return
 
     if reset_failed:
-        from applypilot.apply.launcher import reset_failed as do_reset
+        from hireember.apply.launcher import reset_failed as do_reset
         count = do_reset()
         console.print(f"[green]Reset {count} failed job(s) for retry.[/green]")
         return
@@ -217,7 +217,7 @@ def apply(
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt
+        from hireember.apply.launcher import gen_prompt
         target = url or ""
         if not target:
             console.print("[red]--gen requires --url to specify which job.[/red]")
@@ -236,7 +236,7 @@ def apply(
         )
         return
 
-    from applypilot.apply.launcher import main as apply_main
+    from hireember.apply.launcher import main as apply_main
 
     effective_limit = limit if limit is not None else (0 if continuous else 1)
 
@@ -267,7 +267,7 @@ def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()
 
-    from applypilot.database import get_stats
+    from hireember.database import get_stats
 
     stats = get_stats()
 
@@ -333,7 +333,7 @@ def dashboard() -> None:
     """Generate and open the HTML dashboard in your browser."""
     _bootstrap()
 
-    from applypilot.view import open_dashboard
+    from hireember.view import open_dashboard
 
     open_dashboard()
 
@@ -343,8 +343,8 @@ def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     from rich.markup import escape
 
-    from applypilot.config import load_env
-    from applypilot.doctor import run_checks
+    from hireember.config import load_env
+    from hireember.doctor import run_checks
 
     load_env()
 
@@ -367,7 +367,7 @@ def doctor() -> None:
     console.print()
 
     # Tier summary
-    from applypilot.config import get_tier, TIER_LABELS
+    from hireember.config import get_tier, TIER_LABELS
     tier = get_tier()
     console.print(f"[bold]Current tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]")
 

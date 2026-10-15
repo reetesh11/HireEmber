@@ -22,8 +22,8 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-from applypilot.database import init_db
-from applypilot.llm import get_client
+from hireember.database import init_db
+from hireember.llm import get_client
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def set_proxy(proxy_str: str | None):
     """Set proxy config from an external caller."""
     global _PROXY_CONFIG
     if proxy_str:
-        from applypilot.discovery.jobspy import parse_proxy
+        from hireember.discovery.jobspy import parse_proxy
         _PROXY_CONFIG = parse_proxy(proxy_str)
 
 
@@ -48,7 +48,7 @@ def set_proxy(proxy_str: str | None):
 
 def _load_base_urls() -> dict[str, str | None]:
     """Load site base URLs from config/sites.yaml."""
-    from applypilot.config import load_base_urls
+    from hireember.config import load_base_urls
     return load_base_urls()
 
 
@@ -467,7 +467,7 @@ def extract_with_llm(page, url: str) -> dict:
         elapsed = time.time() - t0
         log.info("LLM: %d chars in, %.1fs", len(prompt), elapsed)
 
-        from applypilot.discovery.smartextract import extract_json
+        from hireember.discovery.smartextract import extract_json
         result = extract_json(raw)
         desc = result.get("full_description")
         apply_url = result.get("application_url")

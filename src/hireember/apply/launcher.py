@@ -23,15 +23,15 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
-from applypilot import config
-from applypilot.database import get_connection
-from applypilot.apply import prompt as prompt_mod
-from applypilot.apply.chrome import (
+from hireember import config
+from hireember.database import get_connection
+from hireember.apply import prompt as prompt_mod
+from hireember.apply.chrome import (
     launch_chrome, cleanup_worker, kill_all_chrome,
     reset_worker_dir, cleanup_on_exit, _kill_process_tree,
     BASE_CDP_PORT,
 )
-from applypilot.apply.dashboard import (
+from hireember.apply.dashboard import (
     init_worker, update_state, add_event, get_state,
     render_full, get_totals,
 )
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Blocked sites loaded from config/sites.yaml
 def _load_blocked():
-    from applypilot.config import load_blocked_sites
+    from hireember.config import load_blocked_sites
     return load_blocked_sites()
 
 # How often to poll the DB when the queue is empty (seconds)
@@ -146,7 +146,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             return None
 
         # Skip manual ATS sites (unsolvable CAPTCHAs)
-        from applypilot.config import is_manual_ats
+        from hireember.config import is_manual_ats
         apply_url = row["application_url"] or row["url"]
         if is_manual_ats(apply_url):
             conn.execute(

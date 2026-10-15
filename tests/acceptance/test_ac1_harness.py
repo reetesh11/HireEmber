@@ -8,11 +8,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_conftest_isolates_app_dir_from_home():
-    from applypilot import config
+    from hireember import config
 
     assert (REPO_ROOT / "tests" / "conftest.py").is_file()
-    app_dir = Path(os.environ["APPLYPILOT_DIR"]).resolve()
-    assert app_dir != (Path.home() / ".applypilot").resolve()
+    app_dir = Path(os.environ["HIREEMBER_DIR"]).resolve()
+    assert app_dir != (Path.home() / ".hireember").resolve()
     assert Path(config.APP_DIR).resolve() == app_dir
     assert Path(config.DB_PATH).resolve().parent == app_dir
     assert "CHROME_PATH" not in os.environ

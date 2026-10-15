@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from applypilot import config
+from hireember import config
 
 MIN_PYTHON = (3, 11)
 MIN_NODE_MAJOR = 18
@@ -110,7 +110,7 @@ def check_sources(search_cfg: dict | None = None) -> Check:
         search_cfg = config.load_search_config() or {}
     boards = config.resolve_jobspy_sites(search_cfg.get("sites"))
 
-    from applypilot.discovery.workday import load_employers
+    from hireember.discovery.workday import load_employers
 
     employers = load_employers() or {}
     sites = config.load_sites_config().get("sites") or []

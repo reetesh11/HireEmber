@@ -16,8 +16,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from applypilot.config import APP_DIR
-from applypilot.database import get_connection
+from hireember.config import APP_DIR
+from hireember.database import get_connection
 
 console = Console()
 

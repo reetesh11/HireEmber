@@ -10,10 +10,10 @@ import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
-from applypilot.database import get_connection
-from applypilot.llm import get_client
-from applypilot.scoring.validator import (
+from hireember.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
+from hireember.database import get_connection
+from hireember.llm import get_client
+from hireember.scoring.validator import (
     BANNED_WORDS,
     LLM_LEAK_PHRASES,
     sanitize_text,
@@ -247,7 +247,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
             # Generate PDF (best-effort)
             pdf_path = None
             try:
-                from applypilot.scoring.pdf import convert_to_pdf
+                from hireember.scoring.pdf import convert_to_pdf
                 pdf_path = str(convert_to_pdf(cl_path))
             except Exception:
                 log.debug("PDF generation failed for %s", cl_path, exc_info=True)

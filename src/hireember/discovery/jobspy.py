@@ -24,8 +24,8 @@ except ImportError:  # python-jobspy is installed separately (pip install --no-d
             "&& pip install pydantic tls-client requests markdownify regex"
         )
 
-from applypilot import config
-from applypilot.database import get_connection, init_db
+from hireember import config
+from hireember.database import get_connection, init_db
 
 log = logging.getLogger(__name__)
 

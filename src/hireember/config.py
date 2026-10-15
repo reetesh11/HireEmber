@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 log = logging.getLogger(__name__)
 
 # User data directory — all user-specific files live here
-APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
+APP_DIR = Path(os.environ.get("HIREEMBER_DIR") or Path.home() / ".hireember")
 
 # Core paths
 DB_PATH = APP_DIR / "applypilot.db"

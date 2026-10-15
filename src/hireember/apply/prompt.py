@@ -11,7 +11,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from applypilot import config
+from hireember import config
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +498,7 @@ def build_prompt(job: dict, tailored_resume: str,
     phone_digits = "".join(c for c in personal.get("phone", "") if c.isdigit())
 
     # SSO domains the agent cannot sign into (loaded from config/sites.yaml)
-    from applypilot.config import load_blocked_sso
+    from hireember.config import load_blocked_sso
     blocked_sso = load_blocked_sso()
 
     # Preferred display name

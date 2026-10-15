@@ -26,10 +26,10 @@ import yaml
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-from applypilot import config
-from applypilot.config import CONFIG_DIR
-from applypilot.database import init_db, get_stats
-from applypilot.llm import get_client
+from hireember import config
+from hireember.config import CONFIG_DIR
+from hireember.database import init_db, get_stats
+from hireember.llm import get_client
 
 log = logging.getLogger(__name__)
 

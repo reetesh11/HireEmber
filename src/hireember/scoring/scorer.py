@@ -10,9 +10,9 @@ import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import RESUME_PATH
-from applypilot.database import get_connection, get_jobs_by_stage
-from applypilot.llm import get_client
+from hireember.config import RESUME_PATH
+from hireember.database import get_connection, get_jobs_by_stage
+from hireember.llm import get_client
 
 log = logging.getLogger(__name__)
 
