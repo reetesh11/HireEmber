@@ -7,10 +7,10 @@ import signal
 import pytest
 from typer.testing import CliRunner
 
-import applypilot.apply.chrome as chrome_mod
-from applypilot import config, database
-from applypilot.apply import dashboard, launcher
-from applypilot.cli import app
+import hireember.apply.chrome as chrome_mod
+from hireember import config, database
+from hireember.apply import dashboard, launcher
+from hireember.cli import app
 
 # Importing the launcher registers a Chrome/CDP-port sweep at interpreter exit;
 # no Chrome is started by these tests, so keep the developer's browser alone.

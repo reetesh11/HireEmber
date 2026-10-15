@@ -5,10 +5,10 @@ import atexit
 import pytest
 from typer.testing import CliRunner
 
-import applypilot.apply.chrome as chrome_mod
-from applypilot import config
-from applypilot.apply import dashboard, launcher
-from applypilot.cli import app
+import hireember.apply.chrome as chrome_mod
+from hireember import config
+from hireember.apply import dashboard, launcher
+from hireember.cli import app
 
 # No Chrome is started here; don't sweep the developer's browser at exit.
 atexit.unregister(chrome_mod.cleanup_on_exit)

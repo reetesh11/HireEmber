@@ -1,8 +1,8 @@
 """Smoke test: the package imports and exposes a version string."""
 
-import applypilot
+import hireember
 
 
 def test_version_is_non_empty_string():
-    assert isinstance(applypilot.__version__, str)
-    assert applypilot.__version__
+    assert isinstance(hireember.__version__, str)
+    assert hireember.__version__

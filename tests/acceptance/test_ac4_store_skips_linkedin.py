@@ -10,7 +10,7 @@ def _stored_urls(conn) -> list[str]:
 
 
 def test_linkedin_url_detection_uses_host():
-    from applypilot.config import is_linkedin_url
+    from hireember.config import is_linkedin_url
 
     for url in (
         "https://www.linkedin.com/jobs/view/123",
@@ -31,8 +31,8 @@ def test_linkedin_url_detection_uses_host():
 
 
 def test_store_jobspy_results_skips_linkedin_job_urls(tmp_path):
-    from applypilot.database import init_db
-    from applypilot.discovery.jobspy import store_jobspy_results
+    from hireember.database import init_db
+    from hireember.discovery.jobspy import store_jobspy_results
 
     conn = init_db(tmp_path / "t.db")
     df = pd.DataFrame(
@@ -48,8 +48,8 @@ def test_store_jobspy_results_skips_linkedin_job_urls(tmp_path):
 
 
 def test_store_jobspy_results_skips_linkedin_direct_apply_url(tmp_path):
-    from applypilot.database import init_db
-    from applypilot.discovery.jobspy import store_jobspy_results
+    from hireember.database import init_db
+    from hireember.discovery.jobspy import store_jobspy_results
 
     conn = init_db(tmp_path / "t.db")
     other = "https://www.indeed.com/viewjob?jk=2"
@@ -65,7 +65,7 @@ def test_store_jobspy_results_skips_linkedin_direct_apply_url(tmp_path):
 
 
 def test_store_jobs_skips_linkedin_url_and_application_url(tmp_path):
-    from applypilot.database import init_db, store_jobs
+    from hireember.database import init_db, store_jobs
 
     conn = init_db(tmp_path / "t.db")
     jobs = [
@@ -79,8 +79,8 @@ def test_store_jobs_skips_linkedin_url_and_application_url(tmp_path):
 
 
 def test_workday_store_results_skips_linkedin_url(tmp_path):
-    from applypilot.database import init_db
-    from applypilot.discovery.workday import store_results
+    from hireember.database import init_db
+    from hireember.discovery.workday import store_results
 
     conn = init_db(tmp_path / "t.db")
     good = "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1"
