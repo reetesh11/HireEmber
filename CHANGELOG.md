@@ -5,6 +5,24 @@ All notable changes to ApplyPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Renamed to HireEmber** - the package is now `hireember` (`src/hireember`), installed with
+  `pip install hireember`, and the command is `hireember` (or `python -m hireember`). The old
+  `applypilot` command is gone.
+- **Data folder** - `HIREEMBER_DIR` replaces `APPLYPILOT_DIR`, which is no longer read. The default
+  data folder is `~/.hireember`, and new folders use the database file `hireember.db`.
+- **Legacy data folder** - if `HIREEMBER_DIR` is unset, `~/.hireember` is missing and `~/.applypilot`
+  exists, HireEmber uses `~/.applypilot` (with its `applypilot.db`) in place
+  and prints a one-line notice on stderr. Nothing is moved, copied or deleted. To move it:
+  `mv ~/.applypilot ~/.hireember && mv ~/.hireember/applypilot.db ~/.hireember/hireember.db`
+
+### Fixed
+- **`hireember doctor` with malformed YAML** - a `searches.yaml`, `employers.yaml` or `sites.yaml` that
+  fails to parse or whose top level is not a mapping no longer crashes doctor; the Job sources check
+  reports MISSING with the file name and the error.
+
 ## [0.2.0] - 2026-02-17
 
 ### Added
