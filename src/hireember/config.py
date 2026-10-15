@@ -4,16 +4,54 @@ import logging
 import os
 import platform
 import shutil
+import sys
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
 # User data directory — all user-specific files live here
-APP_DIR = Path(os.environ.get("HIREEMBER_DIR") or Path.home() / ".hireember")
+APP_DIR_ENV = "HIREEMBER_DIR"
+APP_DIR_NAME = ".hireember"
+LEGACY_APP_DIR_NAME = ".applypilot"
+DB_FILENAME = "hireember.db"
+LEGACY_DB_FILENAME = "applypilot.db"
+LEGACY_DIR_NOTICE = (
+    "HireEmber: using legacy data folder ~/.applypilot. To move it, run: "
+    "mv ~/.applypilot ~/.hireember && mv ~/.hireember/applypilot.db ~/.hireember/hireember.db"
+)
+
+
+def resolve_app_dir(environ: Mapping[str, str] | None = None, home: Path | None = None) -> tuple[Path, bool]:
+    """Pick the data folder; return ``(app_dir, is_legacy)``.
+
+    Order: ``$HIREEMBER_DIR``, then ``~/.hireember`` if it exists, then the
+    legacy ``~/.applypilot`` folder if it exists, else ``~/.hireember``.
+    Pure: creates, moves and prints nothing.
+    """
+    if environ is None:
+        environ = os.environ
+    if home is None:
+        home = Path.home()
+    value = (environ.get(APP_DIR_ENV) or "").strip()
+    if value:
+        return Path(value).expanduser(), False
+    current = home / APP_DIR_NAME
+    if current.exists():
+        return current, False
+    legacy = home / LEGACY_APP_DIR_NAME
+    if legacy.is_dir():
+        return legacy, True
+    return current, False
+
+
+APP_DIR, USING_LEGACY_APP_DIR = resolve_app_dir()
+if USING_LEGACY_APP_DIR:
+    sys.stderr.write(LEGACY_DIR_NOTICE + "\n")
 
 # Core paths
-DB_PATH = APP_DIR / "applypilot.db"
+DB_PATH = APP_DIR / (LEGACY_DB_FILENAME if USING_LEGACY_APP_DIR else DB_FILENAME)
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
@@ -96,7 +134,7 @@ def ensure_dirs():
 
 
 def load_profile() -> dict:
-    """Load user profile from ~/.applypilot/profile.json."""
+    """Load user profile from ~/.hireember/profile.json."""
     import json
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(
@@ -106,7 +144,7 @@ def load_profile() -> dict:
 
 
 def load_search_config() -> dict:
-    """Load search configuration from ~/.applypilot/searches.yaml."""
+    """Load search configuration from ~/.hireember/searches.yaml."""
     import yaml
     if not SEARCH_CONFIG_PATH.exists():
         # Fall back to package-shipped example
@@ -226,7 +264,7 @@ DEFAULTS = {
 
 
 def load_env():
-    """Load environment variables from ~/.applypilot/.env if it exists."""
+    """Load environment variables from ~/.hireember/.env if it exists."""
     from dotenv import load_dotenv
     if ENV_PATH.exists():
         load_dotenv(ENV_PATH)
