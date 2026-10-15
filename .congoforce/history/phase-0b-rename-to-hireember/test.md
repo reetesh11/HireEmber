@@ -1,0 +1,40 @@
+# Acceptance test plan — Rename the project from applypilot to HireEmber
+
+## Coverage
+| Criterion | File | Test names | Red because |
+| --- | --- | --- | --- |
+| AC-1 | `tests/acceptance/test_ac1_lint.py` (unchanged, green) | `test_ruff_check_passes_on_whole_repo` | Not red: pins `ruff check .`, which must stay clean with the new test files included |
+| AC-1 | `tests/acceptance/test_ac3_jobspy_sites.py`, `test_ac4_store_skips_linkedin.py`, `test_ac5_apply_rejects_linkedin.py`, `test_ac6_doctor.py`, `tests/unit/test_apply_linkedin.py`, `tests/unit/test_doctor.py`, `tests/unit/test_linkedin_policy.py` | the existing suites, migrated (4 + 5 + 5 + 12 + 3 + 7 + 21 tests) | They now import `hireember`, which does not exist (`ModuleNotFoundError`), or read `src/hireember/config/searches.example.yaml`, which is missing |
+| AC-2 | `tests/acceptance/test_hireember_ac2_package.py` | `test_package_directory_is_hireember_only`, `test_import_hireember_exposes_non_empty_version` | `src/hireember` is missing and `src/applypilot` still exists |
+| AC-2 | `tests/unit/test_package.py` | `test_version_is_non_empty_string` | `import hireember` fails |
+| AC-3 | `tests/acceptance/test_hireember_ac3_no_legacy_imports.py` | `test_no_imports_of_old_package_in_src_or_tests` | `src/applypilot/**` still imports `applypilot` |
+| AC-4 | `tests/acceptance/test_hireember_ac4_cli.py` | `test_help_exits_0_and_lists_exactly_the_six_commands`, `test_help_says_hireember_and_not_applypilot`, `test_version_flags_print_hireember_version`, `test_python_dash_m_hireember_runs_the_cli` | `hireember.cli` and `python -m hireember` do not exist |
+| AC-5 | `tests/acceptance/test_hireember_ac5_pyproject.py` | `test_project_name_is_hireember`, `test_console_script_is_hireember_only`, `test_wheel_packages_and_artifacts_point_at_src_hireember` | pyproject still says `applypilot` |
+| AC-5 | `tests/acceptance/test_hireember_ac5_pyproject_unchanged.py` (green) | `test_version_urls_and_authors_unchanged` | Not red: pins version 0.3.0, upstream `[project.urls]` and `authors` (out of scope to change) |
+| AC-6 | `tests/acceptance/test_hireember_ac6_app_dir_env.py` | `test_hireember_dir_env_sets_app_dir_without_notice`, `test_resolve_app_dir_prefers_env_even_with_legacy_folders` | No `hireember.config`, `HIREEMBER_DIR` or `resolve_app_dir` yet |
+| AC-7 | `tests/acceptance/test_hireember_ac7_app_dir_default.py` | `test_default_app_dir_is_home_hireember_without_notice`, `test_old_applypilot_dir_variable_is_ignored`, `test_resolve_app_dir_defaults_to_home_hireember` | Same: the module and resolver are missing |
+| AC-8 | `tests/acceptance/test_hireember_ac8_legacy_app_dir.py` | `test_legacy_folder_is_used_and_profile_loads`, `test_exactly_one_notice_line_on_stderr_only`, `test_notice_constant_and_resolver` | No legacy fallback, notice or `LEGACY_DIR_NOTICE` yet |
+| AC-9 | `tests/acceptance/test_hireember_ac9_both_dirs.py` | `test_both_folders_use_hireember_without_notice`, `test_resolve_app_dir_prefers_existing_hireember` | The module and resolver are missing |
+| AC-10 | `tests/acceptance/test_hireember_ac10_user_text.py` | `test_no_old_commands_or_data_folder_outside_legacy_fallback`, `test_env_example_header`, `test_package_yaml_headers_say_hireember[x3]`, `test_doctor_header_and_missing_notes_say_hireember`, `test_status_header_says_hireember`, `test_dashboard_html_title_says_hireember`, `test_missing_profile_error_says_hireember_init` | `applypilot init/run/apply/doctor` and `~/.applypilot` still appear in src, README, CONTRIBUTING and .env.example. The YAML files are not under `src/hireember`, and the doctor, status, dashboard and profile text still says ApplyPilot |
+| AC-11 | `tests/acceptance/test_hireember_ac11_readme.py` | `test_readme_title_is_hireember`, `test_readme_install_and_command_examples_use_hireember` | The README title is `# ApplyPilot` and its examples say `applypilot` |
+| AC-11 | `tests/acceptance/test_hireember_ac11_attribution_unchanged.py` (green) | `test_readme_keeps_disclaimer_fork_notice_and_license_section`, `test_license_file_is_byte_for_byte_unchanged` | Not red: pins the line-3 disclaimer, fork notice and License section verbatim, and LICENSE by SHA-256 |
+| AC-11 | `tests/acceptance/test_ac8_readme_fork_notice.py`, `test_ac8_readme_unchanged.py` (green) | existing | Not red: the existing attribution checks keep passing |
+| AC-12 (gate-1 addition) | `tests/acceptance/test_hireember_ac12_doctor_bad_yaml.py` | 13 cases: bad user `searches.yaml` (YAML error, list, scalar), bad `searches.example.yaml`, non-dict `search_cfg`, bad `employers.yaml`/`sites.yaml` (YAML error, list), unreadable `searches.yaml`, empty files count as `{}` and valid configs stay OK, and `run_checks` plus CLI `doctor` exit 0 with `Job sources MISSING` | `hireember.doctor` does not exist. Today `applypilot.doctor.check_sources` also raises on these inputs |
+
+AC-12 is not in req.md. Gate-1 answer (3) added it, and the interface contract specifies it ("Doctor with malformed YAML").
+
+## Approach
+- Only public surfaces from the interface contract are used: `hireember.__version__`, `hireember.cli.app` through Typer's `CliRunner` and `typer.main.get_command`, `python -m hireember`, `hireember.config` (`APP_DIR`, `USING_LEGACY_APP_DIR`, `DB_PATH`, `APP_DIR_ENV`, `LEGACY_DIR_NOTICE`, `resolve_app_dir`, `load_profile`, `PROFILE_PATH`, `SEARCH_CONFIG_PATH`, `CONFIG_DIR`), `hireember.doctor.check_sources` and `run_checks`, `hireember.view.generate_dashboard`, and `hireember.database.init_db`. Files (`pyproject.toml`, README, LICENSE, `.env.example`, package YAML) are read directly.
+- AC-6 to AC-9 check the import-time data folder in a fresh subprocess, as the contract's testing note says. Each run uses `HOME=<tmp home>`, `PYTHONPATH=<repo>/src`, and `HIREEMBER_DIR` and `APPLYPILOT_DIR` removed or set as the case needs. Assertions are on stdout JSON (`APP_DIR`, legacy flag, `DB_PATH`) and on stderr (the notice). They also check the folder state: nothing created, moved or changed. Each file also has an in-process `resolve_app_dir(environ=..., home=tmp_path)` test. There is no `importlib.reload`.
+- Gate-1 answers are pinned too. New and `HIREEMBER_DIR` folders use `hireember.db`, while the legacy folder keeps `applypilot.db`. `APPLYPILOT_DIR` is ignored.
+- The grep-style tests (AC-3 and AC-10) build the old name as `"apply" + "pilot"` so they don't match their own source. AC-10 allows matches only in `src/hireember/config.py`, the legacy-fallback file named in the contract.
+- AC-12 copies the package `config/` folder to a temp dir and monkeypatches `hireember.config.CONFIG_DIR` and `SEARCH_CONFIG_PATH` there. The contract says these are read at call time.
+- Frozen harness: `tests/conftest.py` now sets `HIREEMBER_DIR` (prefix `hireember-tests-`), and `isolated_db` imports `hireember.config` and `hireember.database` (temp DB name `hireember.db`). Fixture names and behaviour are unchanged. The existing unit and acceptance tests were changed mechanically: `applypilot` became `hireember`, `APPLYPILOT_DIR` became `HIREEMBER_DIR`, and `ApplyPilot Doctor` became `HireEmber Doctor`.
+- `tests/acceptance/test_ac1_harness.py` was migrated the same way but is not listed in tests.json. One of its tests (`test_dev_extras_include_pytest_and_ruff`) passes today, so the file cannot be declared expect-red as a whole. It still has to pass under AC-1's full `pytest` run.
+- Sanity check: I applied a throwaway mechanical rename with a contract-shaped `resolve_app_dir` and `check_sources` to a copy of the worktree in the scratchpad (not the worktree). All 117 tests passed and `ruff check .` was clean, so the tests can be met. `congoforce try-tests` reports PASS. Every expected-red test fails on a missing `hireember` module or file, or on an old-name assertion. All unchanged-behaviour tests pass.
+
+## Untestable criteria
+- none. AC-1's "`pytest` exits 0" is the full suite itself, which the verifier runs. `ruff check .` is pinned by `test_ac1_lint.py`.
+
+## Open questions
+- none

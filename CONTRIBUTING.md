@@ -1,6 +1,6 @@
-# Contributing to ApplyPilot
+# Contributing to HireEmber
 
-Thank you for your interest in contributing to ApplyPilot. This guide covers everything you need to get started.
+Thank you for your interest in contributing to HireEmber. This guide covers everything you need to get started.
 
 ## Development Setup
 
@@ -18,12 +18,12 @@ pip install -e ".[dev]"
 playwright install chromium
 ```
 
-This installs ApplyPilot in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright.
+This installs HireEmber in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright.
 
 ### Verify Installation
 
 ```bash
-applypilot --version
+hireember --version
 pytest tests/ -v
 ruff check .
 ```
@@ -45,7 +45,7 @@ Workday employer portals are configured in `config/employers.yaml`. To add a new
   url: "https://company.wd5.myworkdaysite.com/en-US/recruiting"
 ```
 
-4. Test discovery: `applypilot discover --employer "Company Name"`
+4. Test discovery: `hireember discover --employer "Company Name"`
 5. Submit a PR with the new entry
 
 ### Adding New Career Sites
@@ -66,7 +66,7 @@ Direct career site scrapers are configured in `config/sites.yaml`. To add a new 
     description: ".job-description"
 ```
 
-3. Test: `applypilot discover --site "Company Name"`
+3. Test: `hireember discover --site "Company Name"`
 4. Submit a PR
 
 ### Bug Fixes and Features
@@ -89,12 +89,12 @@ pytest tests/ -v
 pytest tests/test_scoring.py -v
 
 # Run with coverage
-pytest tests/ --cov=src/applypilot --cov-report=term-missing
+pytest tests/ --cov=src/hireember --cov-report=term-missing
 ```
 
 ## Linting and Code Style
 
-ApplyPilot uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+HireEmber uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
 ```bash
 # Check for issues
@@ -128,7 +128,7 @@ ruff format src/
 
 ```
 ApplyPilot/
-├── src/applypilot/       # Main package
+├── src/hireember/        # Main package
 │   ├── __init__.py
 │   ├── cli.py            # CLI entry points
 │   ├── discover/         # Stage 1: job discovery scrapers
@@ -146,4 +146,4 @@ ApplyPilot/
 
 ## License
 
-By contributing to ApplyPilot, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE).
+By contributing to HireEmber, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE).

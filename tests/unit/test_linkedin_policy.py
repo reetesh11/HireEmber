@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from applypilot import config
+from hireember import config
 
 
 @pytest.mark.parametrize(
@@ -43,7 +43,7 @@ def test_resolve_jobspy_sites_defaults():
 
 
 def test_resolve_jobspy_sites_drops_linkedin_with_warning(caplog):
-    caplog.set_level(logging.WARNING, logger="applypilot.config")
+    caplog.set_level(logging.WARNING, logger="hireember.config")
     assert config.resolve_jobspy_sites(["LinkedIn", "indeed"]) == ["indeed"]
     assert any("LinkedIn" in r.getMessage() for r in caplog.records)
 
@@ -53,7 +53,7 @@ def test_resolve_jobspy_sites_can_be_empty():
 
 
 def test_resolve_jobspy_sites_keeps_order_without_warning(caplog):
-    caplog.set_level(logging.WARNING, logger="applypilot.config")
+    caplog.set_level(logging.WARNING, logger="hireember.config")
     assert config.resolve_jobspy_sites(["zip_recruiter", "glassdoor"]) == ["zip_recruiter", "glassdoor"]
     assert not caplog.records
 
@@ -70,7 +70,7 @@ def _urls(conn):
 
 
 def test_database_store_jobs_skips_linkedin(tmp_path):
-    from applypilot.database import init_db, store_jobs
+    from hireember.database import init_db, store_jobs
 
     conn = init_db(tmp_path / "t.db")
     jobs = [
@@ -84,8 +84,8 @@ def test_database_store_jobs_skips_linkedin(tmp_path):
 
 
 def test_workday_store_results_skips_linkedin(tmp_path):
-    from applypilot.database import init_db
-    from applypilot.discovery.workday import store_results
+    from hireember.database import init_db
+    from hireember.discovery.workday import store_results
 
     conn = init_db(tmp_path / "t.db")
     jobs = [
@@ -97,7 +97,7 @@ def test_workday_store_results_skips_linkedin(tmp_path):
 
 
 def test_search_jobs_with_only_linkedin_does_not_scrape(monkeypatch):
-    import applypilot.discovery.jobspy as jobspy_mod
+    import hireember.discovery.jobspy as jobspy_mod
 
     def fail(**kwargs):
         raise AssertionError("scrape_jobs must not be called")

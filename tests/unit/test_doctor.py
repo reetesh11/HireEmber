@@ -1,9 +1,9 @@
-"""Unit tests for applypilot.doctor."""
+"""Unit tests for hireember.doctor."""
 
 import subprocess
 
-from applypilot import doctor
-from applypilot.database import close_connection, init_db
+from hireember import doctor
+from hireember.database import close_connection, init_db
 
 ORDER = [
     "Python", "profile.json", "resume.txt", "searches.yaml", "python-jobspy", "LLM API key",

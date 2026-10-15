@@ -7,14 +7,14 @@ import pytest
 import yaml
 
 EXAMPLE_SEARCHES = (
-    Path(__file__).resolve().parents[2] / "src" / "applypilot" / "config" / "searches.example.yaml"
+    Path(__file__).resolve().parents[2] / "src" / "hireember" / "config" / "searches.example.yaml"
 )
 
 
 @pytest.fixture
 def scrape_calls(monkeypatch, isolated_db):
     """Stub JobSpy's scrape_jobs; record every call's kwargs; return no rows."""
-    import applypilot.discovery.jobspy as jobspy_mod
+    import hireember.discovery.jobspy as jobspy_mod
 
     calls: list[dict] = []
 
@@ -31,7 +31,7 @@ def _lower(sites):
 
 
 def test_search_jobs_default_sites_exclude_linkedin(scrape_calls):
-    from applypilot.discovery.jobspy import search_jobs
+    from hireember.discovery.jobspy import search_jobs
 
     result = search_jobs("python developer", "Remote", sites=None)
 
@@ -44,7 +44,7 @@ def test_search_jobs_default_sites_exclude_linkedin(scrape_calls):
 
 
 def test_full_crawl_default_sites_exclude_linkedin(scrape_calls):
-    from applypilot.discovery.jobspy import _full_crawl
+    from hireember.discovery.jobspy import _full_crawl
 
     search_cfg = {
         "queries": [{"query": "python developer", "tier": 1}],
@@ -63,7 +63,7 @@ def test_full_crawl_default_sites_exclude_linkedin(scrape_calls):
 
 
 def test_search_jobs_drops_explicitly_configured_linkedin(scrape_calls):
-    from applypilot.discovery.jobspy import search_jobs
+    from hireember.discovery.jobspy import search_jobs
 
     search_jobs("python developer", "Remote", sites=["indeed", "LinkedIn", " linkedin ", "zip_recruiter"])
 
