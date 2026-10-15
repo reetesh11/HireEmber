@@ -15,6 +15,7 @@ except a bootstrap task, which may fill in the test commands.
 - Reuse existing utilities before adding new ones.
 - Keep each commit to one task from tech.md, with the build green after it.
 - (add repo-specific rules here: layout, error handling, logging, copy tone)
+- CLI help text lives in `typer.Typer(help=...)` in `cli.py`, which overrides the callback docstring. Change both when rewording the CLI.
 
 ## Docs agents should read
 
@@ -23,7 +24,10 @@ except a bootstrap task, which may fill in the test commands.
 
 ## Gotchas
 
-- (none yet; Retro proposes additions after each run)
+- The repo has two remotes: `origin` = reetesh11/HireEmber, `upstream` = Pickle-Pixel/ApplyPilot. `gh` must default to reetesh11/HireEmber (`gh repo set-default reetesh11/HireEmber`). Never open PRs or push to upstream.
+- The freeze commit may leave the test author's edits to files that were already tracked (for example the shared conftest) uncommitted. The implementer commits them byte for byte in its first task commit and never edits them.
+- The CongoForce hook blocks any Bash command whose text contains a frozen test path, even in a summary or answer. Read frozen files with the Read tool and refer to them by description in command text.
+- The package is `hireember` (`src/hireember`). Its data folder comes from `HIREEMBER_DIR`, defaulting to `~/.hireember` with a read-only `~/.applypilot` fallback. Tests isolate through `HIREEMBER_DIR` and never touch the real home folders.
 
 ## Draft notes
 
