@@ -15,6 +15,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from hireember import config
 
 MIN_PYTHON = (3, 11)
@@ -104,16 +106,55 @@ def check_database(db_path: str | Path | None = None) -> Check:
     return Check("Database", "OK", str(path))
 
 
+def _load_yaml_mapping(path: Path) -> dict:
+    """Read a YAML file whose top level must be a mapping; missing or empty gives {}.
+
+    Raises ValueError for a non-mapping top level; yaml.YAMLError and OSError propagate.
+    """
+    if not path.exists():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError(f"top level must be a mapping, got {type(data).__name__}")
+    return data
+
+
+def _bad_source(path: Path, error: Exception) -> Check:
+    return Check("Job sources", "MISSING", f"{path.name}: {' '.join(str(error).split())}")
+
+
 def check_sources(search_cfg: dict | None = None) -> Check:
-    """Summarise the configured job sources (JobSpy boards, Workday, career sites)."""
+    """Summarise the configured job sources (JobSpy boards, Workday, career sites).
+
+    A malformed or non-mapping YAML source gives MISSING with the error, never raises.
+    """
     if search_cfg is None:
-        search_cfg = config.load_search_config() or {}
+        path = config.SEARCH_CONFIG_PATH
+        if not path.exists():
+            path = config.CONFIG_DIR / "searches.example.yaml"
+        try:
+            search_cfg = _load_yaml_mapping(path)
+        except (yaml.YAMLError, OSError, ValueError) as e:
+            return _bad_source(path, e)
+    elif not isinstance(search_cfg, dict):
+        return Check(
+            "Job sources", "MISSING", f"searches.yaml: top level must be a mapping, got {type(search_cfg).__name__}"
+        )
     boards = config.resolve_jobspy_sites(search_cfg.get("sites"))
 
-    from hireember.discovery.workday import load_employers
+    path = config.CONFIG_DIR / "employers.yaml"
+    try:
+        employers = _load_yaml_mapping(path).get("employers") or {}
+    except (yaml.YAMLError, OSError, ValueError) as e:
+        return _bad_source(path, e)
 
-    employers = load_employers() or {}
-    sites = config.load_sites_config().get("sites") or []
+    path = config.CONFIG_DIR / "sites.yaml"
+    try:
+        sites = _load_yaml_mapping(path).get("sites") or []
+    except (yaml.YAMLError, OSError, ValueError) as e:
+        return _bad_source(path, e)
 
     note = (
         f"JobSpy: {', '.join(boards) if boards else 'none'} | "
