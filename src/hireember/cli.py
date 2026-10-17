@@ -380,5 +380,75 @@ def doctor() -> None:
     console.print()
 
 
+# ---------------------------------------------------------------------------
+# Answer bank and question queue
+# ---------------------------------------------------------------------------
+
+answers_app = typer.Typer(help="Stored answers to application questions.", no_args_is_help=True)
+queue_app = typer.Typer(help="Questions waiting for your answer.", no_args_is_help=True)
+app.add_typer(answers_app, name="answers")
+app.add_typer(queue_app, name="queue")
+
+
+@answers_app.command("list")
+def answers_list() -> None:
+    """Show every stored answer."""
+    _bootstrap()
+
+    from hireember.answers import list_answers
+    from hireember.database import get_connection
+
+    rows = list_answers(get_connection())
+    if not rows:
+        console.print('No answers stored yet. Run "hireember init" or answer queued questions.')
+        return
+    table = Table(title="Answers", show_header=True, header_style="bold cyan")
+    for column in ("Question", "Key", "Answer", "Source", "Last used", "Used"):
+        table.add_column(column)
+    for r in rows:
+        table.add_row(r["question_text"], r["normalized_key"], r["answer"], r["source"],
+                      r["last_used_at"] or "never", str(r["times_used"] or 0))
+    console.print(table)
+
+
+@queue_app.command("list")
+def queue_list() -> None:
+    """Show open queue items."""
+    _bootstrap()
+
+    from hireember.answers import list_queue
+    from hireember.database import get_connection
+
+    items = list_queue(get_connection())
+    if not items:
+        console.print("No open queue items.")
+        return
+    table = Table(title="Queue", show_header=True, header_style="bold cyan")
+    for column in ("Id", "Ticket", "Kind", "Question"):
+        table.add_column(column)
+    for i in items:
+        table.add_row(str(i["id"]), str(i["ticket_id"] or ""), i["kind"] or "", i["question_text"] or "")
+    console.print(table)
+
+
+@queue_app.command("answer")
+def queue_answer(
+    item_id: int = typer.Argument(..., help="Queue item id."),
+    answer: str = typer.Argument(..., help="Your answer."),
+) -> None:
+    """Answer a queued question and return its ticket to pending."""
+    _bootstrap()
+
+    from hireember.answers import QueueError, answer_queue_item
+    from hireember.database import get_connection
+
+    try:
+        result = answer_queue_item(get_connection(), item_id, answer)
+    except QueueError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(result.message, markup=False)
+
+
 if __name__ == "__main__":
     app()
