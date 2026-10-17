@@ -450,5 +450,83 @@ def queue_answer(
     console.print(result.message, markup=False)
 
 
+# ---------------------------------------------------------------------------
+# Base resumes
+# ---------------------------------------------------------------------------
+
+resume_app = typer.Typer(help="Base resumes used for scoring and tailoring.", no_args_is_help=True)
+app.add_typer(resume_app, name="resume")
+
+
+@resume_app.command("add")
+def resume_add(
+    file: str = typer.Argument(..., help="Resume file (.txt or .pdf)."),
+    name: str = typer.Option(..., "--name", help="Name for this resume."),
+    tags: str = typer.Option("", "--tags", help="Comma-separated tags, matched against job titles."),
+    text: Optional[str] = typer.Option(None, "--text", help="Plain-text copy of a PDF resume."),
+) -> None:
+    """Add a base resume."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.resumes import ResumeError, add_resume
+
+    try:
+        resume_id = add_resume(get_connection(), file, name, tags, text_file=text)
+    except ResumeError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f"Added resume {resume_id}: {name}.", markup=False)
+
+
+@resume_app.command("list")
+def resume_list() -> None:
+    """Show base resumes."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.resumes import list_resumes
+
+    rows = list_resumes(get_connection())
+    if not rows:
+        console.print('No base resumes. Add one with "hireember resume add".')
+        return
+    table = Table(title="Base resumes", show_header=True, header_style="bold cyan")
+    for column in ("Id", "Name", "Tags", "Pinned", "File", "Added"):
+        table.add_column(column)
+    for r in rows:
+        table.add_row(str(r["id"]), r["name"], ", ".join(r["tags"]), "yes" if r["pinned"] else "",
+                      r["file_path"], r["added_at"] or "")
+    console.print(table)
+
+
+@resume_app.command("pin")
+def resume_pin(resume_id: int = typer.Argument(..., help="Resume id.")) -> None:
+    """Always use this resume."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.resumes import ResumeError, pin_resume
+
+    try:
+        pin_resume(get_connection(), resume_id)
+    except ResumeError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f"Pinned resume {resume_id}.", markup=False)
+
+
+@resume_app.command("unpin")
+def resume_unpin() -> None:
+    """Go back to choosing the best fit per job."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.resumes import unpin_resume
+
+    unpin_resume(get_connection())
+    console.print("Unpinned.")
+
+
 if __name__ == "__main__":
     app()
