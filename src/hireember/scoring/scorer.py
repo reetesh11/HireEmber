@@ -8,11 +8,11 @@ profile and resume file.
 import logging
 import re
 import time
-from datetime import datetime, timezone
 
 from hireember.config import RESUME_PATH
 from hireember.database import get_connection, get_jobs_by_stage
 from hireember.llm import get_client
+from hireember.tickets import set_job_score
 
 log = logging.getLogger(__name__)
 
@@ -152,12 +152,9 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         )
 
     # Write scores to DB
-    now = datetime.now(timezone.utc).isoformat()
     for r in results:
-        conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
-            (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, r["url"]),
-        )
+        set_job_score(conn, r["url"], r["score"], f"{r['keywords']}\n{r['reasoning']}",
+                      commit=False)
     conn.commit()
 
     elapsed = time.time() - t0
