@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from hireember.config import DB_PATH, is_linkedin_url
-from hireember.tickets import normalize_text
+from hireember.tickets import normalize_text, set_job_company
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -150,6 +150,7 @@ def _init_db(db_path: Path | str | None = None) -> tuple[sqlite3.Connection, Pat
     ensure_columns(conn)
     migration.create_schema(conn)
     migration.backfill_jobs(conn)
+    migration.migrate_tickets(conn)
 
     return conn, backup
 
@@ -379,6 +380,8 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                  normalize_text(job.get("title")), normalize_text(job.get("location")), now),
             )
             new += 1
+            if job.get("company"):
+                set_job_company(conn, url, job["company"])
         except sqlite3.IntegrityError:
             conn.execute("UPDATE jobs SET last_seen_at = ? WHERE url = ?", (now, url))
             existing += 1

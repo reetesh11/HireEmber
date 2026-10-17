@@ -119,6 +119,65 @@ def backfill_jobs(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+# old apply_status -> (ticket status, first event reason); None reason = use apply_error
+_STATUS_MAP: dict[str, tuple[str, str | None]] = {
+    "": ("pending", ""),
+    "tailored": ("pending", ""),
+    "in_progress": ("pending", "stale lock from an interrupted run"),
+    "applied": ("applied", "unverified"),
+    "failed": ("blocked for human", None),
+    "manual": ("blocked for human", "manual ATS"),
+    "captcha": ("blocked for human", "CAPTCHA"),
+    "login_issue": ("blocked for human", "account needed"),
+    "expired": ("closed", "role expired"),
+}
+
+
+def map_apply_status(apply_status: str | None, apply_error: str | None) -> tuple[str, str]:
+    """Return (ticket status, reason) for an old ``apply_status`` value."""
+    key = (apply_status or "").strip()
+    if key not in _STATUS_MAP:
+        return "blocked for human", f"unknown status: {key}"
+    status, reason = _STATUS_MAP[key]
+    return status, (apply_error or "") if reason is None else reason
+
+
+def migrate_tickets(conn: sqlite3.Connection) -> int:
+    """Create a ticket (and first event) for each tailored or attempted job lacking one.
+
+    One transaction per ticket, so an interrupted run is completed by running again.
+    Returns the number of tickets created.
+    """
+    rows = conn.execute(
+        "SELECT j.url, j.apply_status, j.apply_error, j.fit_score, j.score_reasoning, "
+        "j.tailored_resume_path, j.cover_letter_path FROM jobs j "
+        "WHERE (COALESCE(j.apply_status, '') != '' OR COALESCE(j.tailored_resume_path, '') != '') "
+        "AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.job_url = j.url) ORDER BY j.rowid"
+    ).fetchall()
+    created = 0
+    for url, apply_status, apply_error, score, score_reason, resume, cover in rows:
+        status, reason = map_apply_status(apply_status, apply_error)
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            cur = conn.execute(
+                "INSERT INTO tickets (job_url, status, status_reason, tailored_resume_path, "
+                "cover_letter_path, score, score_reason, unverified, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, status, reason, resume, cover, score, score_reason,
+                 1 if status == "applied" else 0, now, now),
+            )
+            conn.execute(
+                "INSERT INTO ticket_events (ticket_id, status, actor, reason, time) "
+                "VALUES (?, ?, 'system', ?, ?)",
+                (cur.lastrowid, status, reason, now),
+            )
+            conn.commit()
+            created += 1
+        except sqlite3.IntegrityError:
+            conn.rollback()
+    return created
+
+
 def _open_readonly(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30)
 
