@@ -173,6 +173,42 @@ def set_job_score(conn: sqlite3.Connection, url: str, score: int, reasoning: str
     return _ensure_ticket(conn, url, commit)
 
 
+def open_ticket(conn: sqlite3.Connection, url: str, status: str = "pending", reason: str = "") -> int:
+    """Return the ticket id for a job, creating an unscored ticket (and its first event) if missing."""
+    if status not in ALLOWED_STATUSES:
+        raise InvalidStatusError(status)
+    existing = conn.execute("SELECT id FROM tickets WHERE job_url = ?", (url,)).fetchone()
+    if existing:
+        return existing[0]
+    if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
+        raise TicketError(f"Job {url} not found.")
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO tickets (job_url, status, status_reason, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (url, status, reason, now, now),
+    )
+    _add_event(conn, cur.lastrowid, status, "system", reason, when=now)
+    conn.commit()
+    return cur.lastrowid
+
+
+def set_ticket_resume(conn: sqlite3.Connection, ticket_id: int, resume_id: int) -> None:
+    """Record which base resume a ticket uses."""
+    get_ticket(conn, ticket_id)
+    conn.execute("UPDATE tickets SET resume_id = ? WHERE id = ?", (resume_id, ticket_id))
+    conn.commit()
+
+
+def set_ticket_files(conn: sqlite3.Connection, ticket_id: int, resume_path: str,
+                     cover_letter_path: str) -> None:
+    """Record the tailored resume and cover letter files of a ticket."""
+    get_ticket(conn, ticket_id)
+    conn.execute("UPDATE tickets SET tailored_resume_path = ?, cover_letter_path = ? WHERE id = ?",
+                 (resume_path, cover_letter_path, ticket_id))
+    conn.commit()
+
+
 def get_ticket(conn: sqlite3.Connection, ticket_id: int) -> dict:
     """Return a ticket as a dict; raise TicketNotFoundError if it does not exist."""
     row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
