@@ -11,12 +11,10 @@ to avoid apologetic spirals.
 
 import json
 import logging
-import re
 import time
-from datetime import datetime, timezone
 
-from hireember.config import RESUME_PATH, TAILORED_DIR, load_profile
-from hireember.database import get_connection, get_jobs_by_stage
+from hireember.config import load_profile
+from hireember.database import get_connection
 from hireember.llm import get_client
 from hireember.scoring.validator import (
     BANNED_WORDS,
@@ -452,134 +450,49 @@ def tailor_resume(
 
 def run_tailoring(min_score: int = 7, limit: int = 20,
                   validation_mode: str = "normal") -> dict:
-    """Generate tailored resumes for high-scoring jobs.
+    """Tailor resumes and write cover letters for pending tickets that have no files yet.
+
+    Each ticket goes through ``gating.tailor_ticket``: a validated resume and cover letter are
+    written and stored on the ticket, or the ticket is blocked for human with the reason.
 
     Args:
-        min_score:       Minimum fit_score to tailor for.
-        limit:           Maximum jobs to process.
+        min_score:       Minimum ticket score to tailor for.
+        limit:           Maximum tickets to process.
         validation_mode: "strict", "normal", or "lenient".
 
     Returns:
         {"approved": int, "failed": int, "errors": int, "elapsed": float}
     """
+    from hireember.gating import tailor_ticket
+
     profile = load_profile()
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
     conn = get_connection()
 
-    jobs = get_jobs_by_stage(conn=conn, stage="pending_tailor", min_score=min_score, limit=limit)
+    rows = conn.execute(
+        "SELECT id FROM tickets WHERE status = 'pending' AND resume_id IS NOT NULL "
+        "AND COALESCE(tailored_resume_path, '') = '' AND score >= ? ORDER BY score DESC, id LIMIT ?",
+        (min_score, limit),
+    ).fetchall()
 
-    if not jobs:
-        log.info("No untailored jobs with score >= %d.", min_score)
+    if not rows:
+        log.info("No pending tickets with score >= %d to tailor.", min_score)
         return {"approved": 0, "failed": 0, "errors": 0, "elapsed": 0.0}
 
-    TAILORED_DIR.mkdir(parents=True, exist_ok=True)
-    log.info("Tailoring resumes for %d jobs (score >= %d)...", len(jobs), min_score)
+    log.info("Tailoring resumes for %d tickets (score >= %d)...", len(rows), min_score)
     t0 = time.time()
-    completed = 0
-    results: list[dict] = []
-    stats: dict[str, int] = {"approved": 0, "failed_validation": 0, "failed_judge": 0, "error": 0}
-
-    for job in jobs:
-        completed += 1
-        try:
-            tailored, report = tailor_resume(resume_text, job, profile,
-                                             validation_mode=validation_mode)
-
-            # Build safe filename prefix
-            safe_title = re.sub(r"[^\w\s-]", "", job["title"])[:50].strip().replace(" ", "_")
-            safe_site = re.sub(r"[^\w\s-]", "", job["site"])[:20].strip().replace(" ", "_")
-            prefix = f"{safe_site}_{safe_title}"
-
-            # Save tailored resume text
-            txt_path = TAILORED_DIR / f"{prefix}.txt"
-            txt_path.write_text(tailored, encoding="utf-8")
-
-            # Save job description for traceability
-            job_path = TAILORED_DIR / f"{prefix}_JOB.txt"
-            job_desc = (
-                f"Title: {job['title']}\n"
-                f"Company: {job['site']}\n"
-                f"Location: {job.get('location', 'N/A')}\n"
-                f"Score: {job.get('fit_score', 'N/A')}\n"
-                f"URL: {job['url']}\n\n"
-                f"{job.get('full_description', '')}"
-            )
-            job_path.write_text(job_desc, encoding="utf-8")
-
-            # Save validation report
-            report_path = TAILORED_DIR / f"{prefix}_REPORT.json"
-            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-            # Generate PDF for approved resumes (best-effort)
-            # "approved_with_judge_warning" is also a success — resume was generated.
-            pdf_path = None
-            if report["status"] in ("approved", "approved_with_judge_warning"):
-                try:
-                    from hireember.scoring.pdf import convert_to_pdf
-                    pdf_path = str(convert_to_pdf(txt_path))
-                except Exception:
-                    log.debug("PDF generation failed for %s", txt_path, exc_info=True)
-
-            result = {
-                "url": job["url"],
-                "path": str(txt_path),
-                "pdf_path": pdf_path,
-                "title": job["title"],
-                "site": job["site"],
-                "status": report["status"],
-                "attempts": report["attempts"],
-            }
-        except Exception as e:
-            result = {
-                "url": job["url"], "title": job["title"], "site": job["site"],
-                "status": "error", "attempts": 0, "path": None, "pdf_path": None,
-            }
-            log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), job["title"][:40], e)
-
-        results.append(result)
-        stats[result.get("status", "error")] = stats.get(result.get("status", "error"), 0) + 1
-
-        elapsed = time.time() - t0
-        rate = completed / elapsed if elapsed > 0 else 0
-        log.info(
-            "%d/%d [%s] attempts=%s | %.1f jobs/min | %s",
-            completed, len(jobs),
-            result["status"].upper(),
-            result.get("attempts", "?"),
-            rate * 60,
-            result["title"][:40],
-        )
-
-    # Persist to DB: increment attempt counter for ALL, save path only for approved
-    now = datetime.now(timezone.utc).isoformat()
-    _success_statuses = {"approved", "approved_with_judge_warning"}
-    for r in results:
-        if r["status"] in _success_statuses:
-            conn.execute(
-                "UPDATE jobs SET tailored_resume_path=?, tailored_at=?, "
-                "tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",
-                (r["path"], now, r["url"]),
-            )
+    approved = failed = errors = 0
+    for number, row in enumerate(rows, 1):
+        result = tailor_ticket(conn, row[0], profile=profile, validation_mode=validation_mode)
+        if result.tailored_resume_path:
+            approved += 1
+        elif result.reason.startswith("validation failed"):
+            failed += 1
         else:
-            conn.execute(
-                "UPDATE jobs SET tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",
-                (r["url"],),
-            )
-    conn.commit()
+            errors += 1
+        log.info("%d/%d ticket %d [%s] %s", number, len(rows), result.ticket_id,
+                 result.status.upper(), result.reason)
 
     elapsed = time.time() - t0
-    log.info(
-        "Tailoring done in %.1fs: %d approved, %d failed_validation, %d failed_judge, %d errors",
-        elapsed,
-        stats.get("approved", 0),
-        stats.get("failed_validation", 0),
-        stats.get("failed_judge", 0),
-        stats.get("error", 0),
-    )
-
-    return {
-        "approved": stats.get("approved", 0),
-        "failed": stats.get("failed_validation", 0) + stats.get("failed_judge", 0),
-        "errors": stats.get("error", 0),
-        "elapsed": elapsed,
-    }
+    log.info("Tailoring done in %.1fs: %d approved, %d failed validation, %d errors",
+             elapsed, approved, failed, errors)
+    return {"approved": approved, "failed": failed, "errors": errors, "elapsed": elapsed}
