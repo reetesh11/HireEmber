@@ -1,0 +1,13 @@
+flowchart LR
+  start[init_db in database.py]:::changed --> bk[migration.backup_if_needed]:::new
+  start --> sch[migration.create_schema]:::new
+  start --> ens[ensure_columns]:::changed
+  start --> mig[migration.migrate_tickets]:::new
+  scorer[scoring/scorer.py]:::changed --> sjs[tickets.set_job_score]:::new
+  store[store_jobs in database.py]:::changed --> norm[tickets.normalize_text]:::new
+  sjs --> tk[tickets.py]:::new
+  mig --> tk
+  tk --> db[(SQLite: jobs, tickets, ticket_events, settings, ...)]:::changed
+  bk --> bakfile[(db.bak-timestamp)]:::new
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

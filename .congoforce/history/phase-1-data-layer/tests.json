@@ -1,0 +1,19 @@
+{
+  "acceptance": [
+    {"criterion": "AC-1", "file": "tests/acceptance/test_p1_ac1_migration.py", "tests": 6, "expect_red": true,
+     "description": "Legacy DB migration creates the eight tables, one ticket per attempted/tailored row with R3 status, reason and system actor, normalized columns, backup; fresh install makes no backup; store_jobs fills normalized/last_seen columns"},
+    {"criterion": "AC-2", "file": "tests/acceptance/test_p1_ac2_idempotent.py", "tests": 2, "expect_red": true,
+     "description": "Second migration leaves tables, tickets, events, jobs count unchanged and makes no new backup, for applypilot.db and hireember.db"},
+    {"criterion": "AC-3", "file": "tests/acceptance/test_p1_ac3_scoring.py", "tests": 5, "expect_red": true,
+     "description": "Scoring 7/6 gives one pending/skipped ticket, rescoring adds none, threshold setting and fallback to 7"},
+    {"criterion": "AC-4", "file": "tests/acceptance/test_p1_ac4_history.py", "tests": 5, "expect_red": true,
+     "description": "Ordered history with time/actor/reason, same-status no-op, invalid status/actor/unknown ticket rejected without writes"},
+    {"criterion": "AC-5", "file": "tests/acceptance/test_p1_ac5_duplicates.py", "tests": 15, "expect_red": true,
+     "description": "Duplicate detection by text key and application URL blocks the second ticket; blocking vs non-blocking statuses; partial matches; empty keys; oldest linked; repeat refusal"},
+    {"criterion": "AC-6", "file": "tests/acceptance/test_p1_ac6_override.py", "tests": 4, "expect_red": true,
+     "description": "Override with reason 'reapplying' starts the ticket and records a user override event; empty reason refused with nothing written"},
+    {"criterion": "AC-7", "file": "tests/acceptance/test_p1_ac7_unchanged.py", "tests": 2, "expect_red": false,
+     "description": "init_db, store_jobs and get_stats behaviour unchanged"}
+  ],
+  "untestable": []
+}
