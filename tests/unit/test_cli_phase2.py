@@ -27,3 +27,12 @@ def test_empty_listings(env):
 def test_queue_answer_unknown_item_exits_1(env):
     res = CliRunner().invoke(cli.app, ["queue", "answer", "9", "x"])
     assert res.exit_code == 1 and "Queue item 9 not found or already resolved." in res.output
+
+
+def test_status_lists_blocked_tickets(env):
+    from hireember.tickets import open_ticket
+
+    open_ticket(env, "https://j/1", "blocked for human", 'validation failed: employer "Acme Corp" not in resume facts')
+    out = CliRunner().invoke(cli.app, ["status"]).output
+    assert "Tickets needing attention" in out
+    assert 'validation failed: employer "Acme Corp" not in resume facts' in out

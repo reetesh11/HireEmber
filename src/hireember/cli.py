@@ -325,6 +325,23 @@ def status() -> None:
 
         console.print(site_table)
 
+    # Tickets that need a human
+    from hireember.database import get_connection
+
+    blocked = get_connection().execute(
+        "SELECT t.id, j.title, t.status, t.status_reason FROM tickets t "
+        "LEFT JOIN jobs j ON j.url = t.job_url WHERE t.status = 'blocked for human' ORDER BY t.id"
+    ).fetchall()
+    if blocked:
+        attention = Table(title="\nTickets needing attention", show_header=True, header_style="bold red")
+        attention.add_column("Ticket")
+        attention.add_column("Job", overflow="fold")
+        attention.add_column("Status")
+        attention.add_column("Reason", overflow="fold")
+        for ticket_id, title, status_name, reason in blocked:
+            attention.add_row(str(ticket_id), title or "", status_name, reason or "")
+        console.print(attention)
+
     console.print()
 
 
