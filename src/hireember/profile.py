@@ -5,7 +5,10 @@ Answers live in the answer bank (source ``profile``); ``profile.json`` is built 
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
+
+from hireember.tickets import normalize_text
 
 
 @dataclass(frozen=True)
@@ -126,3 +129,47 @@ def contains_key(obj, name: str) -> bool:
     if isinstance(obj, (list, tuple)):
         return any(contains_key(v, name) for v in obj)
     return False
+
+
+def _stored(conn: sqlite3.Connection) -> dict[str, str]:
+    """Profile-source answers by normalized key (lowest id wins)."""
+    rows = conn.execute("SELECT normalized_key, answer FROM answers WHERE source = 'profile' "
+                        "ORDER BY id DESC").fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def group_answers(conn: sqlite3.Connection, group_key: str) -> list[dict]:
+    """Stored profile answers whose key matches one of the group's questions."""
+    group = next(g for g in PROFILE_GROUPS if g.key == group_key)
+    keys = {normalize_text(q) for q in group.questions}
+    rows = conn.execute(
+        "SELECT question_text, normalized_key, answer, source, times_used, last_used_at "
+        "FROM answers WHERE source = 'profile' ORDER BY id").fetchall()
+    return [dict(zip(r.keys(), tuple(r))) for r in rows if r["normalized_key"] in keys]
+
+
+def group_complete(conn: sqlite3.Connection, group: ProfileGroup) -> bool:
+    stored = _stored(conn)
+    return all(normalize_text(q) in stored for q in group.questions)
+
+
+def build_profile(conn: sqlite3.Connection) -> dict:
+    """Build the profile.json layout from the stored profile answers."""
+    stored = _stored(conn)
+    profile: dict = {}
+    for group in PROFILE_GROUPS:
+        for question, (section, field, kind) in zip(group.questions, _FIELDS[group.key]):
+            value = stored.get(normalize_text(question))
+            if value is None:
+                continue
+            value = value.strip()
+            if group.optional and value.lower() in ("skip", "decline", "decline to answer"):
+                value = "Decline to self-identify"
+            if kind == "list":
+                value = [s.strip() for s in value.split(",") if s.strip()]
+            profile.setdefault(section, {})[field] = value
+    comp = profile.get("compensation", {})
+    if "salary_expectation" in comp:
+        comp.setdefault("salary_range_min", comp["salary_expectation"])
+        comp.setdefault("salary_range_max", comp["salary_expectation"])
+    return profile

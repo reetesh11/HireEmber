@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
 from hireember.config import (
@@ -26,6 +28,9 @@ from hireember.config import (
     SEARCH_CONFIG_PATH,
     ensure_dirs,
 )
+from hireember import answers
+from hireember.database import init_db
+from hireember.profile import PROFILE_GROUPS, build_profile, group_complete
 
 console = Console()
 
@@ -77,104 +82,43 @@ def _setup_resume() -> None:
 # Profile
 # ---------------------------------------------------------------------------
 
-def _setup_profile() -> dict:
-    """Walk through profile questions and return a nested profile dict."""
-    console.print(Panel("[bold]Step 2: Profile[/bold]\nTell HireEmber about yourself. This powers scoring, tailoring, and auto-fill."))
+def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Console | None = None) -> dict:
+    """Ask the ten profile groups, store each reply in the answer bank, write profile.json.
 
-    profile: dict = {}
+    A blank reply re-asks (EEO questions store "decline to answer" instead). On a re-run, a group
+    whose questions are all stored is kept unless the user answers ``n`` to the keep prompt.
+    """
+    out = console or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(escape(question), console=out, **kwargs)
 
-    # -- Personal --
-    console.print("\n[bold cyan]Personal Information[/bold cyan]")
-    full_name = Prompt.ask("Full name")
-    profile["personal"] = {
-        "full_name": full_name,
-        "preferred_name": Prompt.ask("Preferred/nickname (leave blank to use first name)", default=""),
-        "email": Prompt.ask("Email address"),
-        "phone": Prompt.ask("Phone number", default=""),
-        "city": Prompt.ask("City"),
-        "province_state": Prompt.ask("Province/State (e.g. Ontario, California)", default=""),
-        "country": Prompt.ask("Country"),
-        "postal_code": Prompt.ask("Postal/ZIP code", default=""),
-        "address": Prompt.ask("Street address (optional, used for form auto-fill)", default=""),
-        "linkedin_url": Prompt.ask("LinkedIn URL", default=""),
-        "github_url": Prompt.ask("GitHub URL (optional)", default=""),
-        "portfolio_url": Prompt.ask("Portfolio URL (optional)", default=""),
-        "website_url": Prompt.ask("Personal website URL (optional)", default=""),
-    }
+    out.print(Panel("[bold]Step 2: Profile[/bold]\nTell HireEmber about yourself. "
+                    "This powers scoring, tailoring, and auto-fill. "
+                    "Never enter passwords, tokens or payment details."))
+    total = len(PROFILE_GROUPS)
+    for number, group in enumerate(PROFILE_GROUPS, 1):
+        out.print(f"\n[bold cyan]Profile step {number} of {total}: {group.title}[/bold cyan]",
+                  highlight=False)
+        if group_complete(conn, group) and str(
+                ask(f"Keep your {group.title} answers? [Y/n]")).strip().lower() not in ("n", "no"):
+            continue
+        if group.optional:
+            out.print("[dim]Optional. Type skip or decline to leave a question unanswered.[/dim]")
+        for question in group.questions:
+            while True:
+                reply = str(ask(question)).strip()
+                if reply:
+                    break
+                if group.optional:
+                    reply = "decline to answer"
+                    break
+                out.print("[yellow]An answer is needed here.[/yellow]")
+            answers.save_answer(conn, question, reply, source="profile")
 
-    # -- Work Authorization --
-    console.print("\n[bold cyan]Work Authorization[/bold cyan]")
-    profile["work_authorization"] = {
-        "legally_authorized_to_work": Confirm.ask("Are you legally authorized to work in your target country?"),
-        "require_sponsorship": Confirm.ask("Will you now or in the future need sponsorship?"),
-        "work_permit_type": Prompt.ask("Work permit type (e.g. Citizen, PR, Open Work Permit — leave blank if N/A)", default=""),
-    }
-
-    # -- Compensation --
-    console.print("\n[bold cyan]Compensation[/bold cyan]")
-    salary = Prompt.ask("Expected annual salary (number)", default="")
-    salary_currency = Prompt.ask("Currency", default="USD")
-    salary_range = Prompt.ask("Acceptable range (e.g. 80000-120000)", default="")
-    range_parts = salary_range.split("-") if "-" in salary_range else [salary, salary]
-    profile["compensation"] = {
-        "salary_expectation": salary,
-        "salary_currency": salary_currency,
-        "salary_range_min": range_parts[0].strip(),
-        "salary_range_max": range_parts[1].strip() if len(range_parts) > 1 else range_parts[0].strip(),
-    }
-
-    # -- Experience --
-    console.print("\n[bold cyan]Experience[/bold cyan]")
-    current_title = Prompt.ask("Current/most recent job title", default="")
-    target_role = Prompt.ask("Target role (what you're applying for, e.g. 'Senior Backend Engineer')", default=current_title)
-    profile["experience"] = {
-        "years_of_experience_total": Prompt.ask("Years of professional experience", default=""),
-        "education_level": Prompt.ask("Highest education (e.g. Bachelor's, Master's, PhD, Self-taught)", default=""),
-        "current_title": current_title,
-        "target_role": target_role,
-    }
-
-    # -- Skills Boundary --
-    console.print("\n[bold cyan]Skills[/bold cyan] (comma-separated)")
-    langs = Prompt.ask("Programming languages", default="")
-    frameworks = Prompt.ask("Frameworks & libraries", default="")
-    tools = Prompt.ask("Tools & platforms (e.g. Docker, AWS, Git)", default="")
-    profile["skills_boundary"] = {
-        "programming_languages": [s.strip() for s in langs.split(",") if s.strip()],
-        "frameworks": [s.strip() for s in frameworks.split(",") if s.strip()],
-        "tools": [s.strip() for s in tools.split(",") if s.strip()],
-    }
-
-    # -- Resume Facts (preserved truths for tailoring) --
-    console.print("\n[bold cyan]Resume Facts[/bold cyan]")
-    console.print("[dim]These are preserved exactly during resume tailoring — the AI will never change them.[/dim]")
-    companies = Prompt.ask("Companies to always keep (comma-separated)", default="")
-    projects = Prompt.ask("Projects to always keep (comma-separated)", default="")
-    school = Prompt.ask("School name(s) to preserve", default="")
-    metrics = Prompt.ask("Real metrics to preserve (e.g. '99.9% uptime, 50k users')", default="")
-    profile["resume_facts"] = {
-        "preserved_companies": [s.strip() for s in companies.split(",") if s.strip()],
-        "preserved_projects": [s.strip() for s in projects.split(",") if s.strip()],
-        "preserved_school": school.strip(),
-        "real_metrics": [s.strip() for s in metrics.split(",") if s.strip()],
-    }
-
-    # -- EEO Voluntary (defaults) --
-    profile["eeo_voluntary"] = {
-        "gender": "Decline to self-identify",
-        "race_ethnicity": "Decline to self-identify",
-        "veteran_status": "Decline to self-identify",
-        "disability_status": "Decline to self-identify",
-    }
-
-    # -- Availability --
-    profile["availability"] = {
-        "earliest_start_date": Prompt.ask("Earliest start date", default="Immediately"),
-    }
-
-    # Save
+    profile = build_profile(conn)
     PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
-    console.print(f"\n[green]Profile saved to {PROFILE_PATH}[/green]")
+    out.print(f"\n[green]Profile saved to {PROFILE_PATH}[/green]")
     return profile
 
 
@@ -342,8 +286,8 @@ def run_wizard() -> None:
     _setup_resume()
     console.print()
 
-    # Step 2: Profile
-    _setup_profile()
+    # Step 2: Profile (ten groups, stored in the answer bank)
+    run_profile_step(init_db())
     console.print()
 
     # Step 3: Search config
