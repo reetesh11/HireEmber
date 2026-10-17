@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from hireember.config import DB_PATH, is_linkedin_url
+from hireember.tickets import normalize_text
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -81,10 +82,21 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     Returns:
         sqlite3.Connection with the schema initialized.
     """
+    conn, _ = _init_db(db_path)
+    return conn
+
+
+def _init_db(db_path: Path | str | None = None) -> tuple[sqlite3.Connection, Path | None]:
+    """Back up if needed, create/upgrade the schema; return (conn, backup path)."""
+    from hireember import migration
+
     path = db_path or DB_PATH
 
     # Ensure parent directory exists
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Backup first, before the connection below can create or change the file
+    backup = migration.backup_if_needed(path)
 
     conn = get_connection(path)
     conn.execute("""
@@ -136,8 +148,10 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    migration.create_schema(conn)
+    migration.backfill_jobs(conn)
 
-    return conn
+    return conn, backup
 
 
 # Complete column registry: column_name -> SQL type with optional default.
@@ -180,6 +194,11 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Tickets / duplicate detection
+    "company_id": "INTEGER",
+    "title_normalized": "TEXT",
+    "location_normalized": "TEXT",
+    "last_seen_at": "TEXT",
 }
 
 
@@ -352,13 +371,16 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                "discovered_at, title_normalized, location_normalized, last_seen_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, strategy, now,
+                 normalize_text(job.get("title")), normalize_text(job.get("location")), now),
             )
             new += 1
         except sqlite3.IntegrityError:
+            conn.execute("UPDATE jobs SET last_seen_at = ? WHERE url = ?", (now, url))
             existing += 1
 
     conn.commit()

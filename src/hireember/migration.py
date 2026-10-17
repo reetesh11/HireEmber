@@ -1,0 +1,201 @@
+"""Database schema additions, backup and ticket migration for HireEmber."""
+
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+from hireember.tickets import normalize_text
+
+NEW_TABLES: tuple[str, ...] = (
+    "companies", "tickets", "ticket_events", "queue_items",
+    "answers", "resumes", "runs", "settings",
+)
+
+NEW_JOBS_COLUMNS: tuple[str, ...] = (
+    "company_id", "title_normalized", "location_normalized", "last_seen_at",
+)
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    careers_url TEXT,
+    ats_type TEXT,
+    active INTEGER DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY,
+    job_url TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    status_reason TEXT DEFAULT '',
+    resume_id INTEGER,
+    tailored_resume_path TEXT,
+    cover_letter_path TEXT,
+    score INTEGER,
+    score_reason TEXT,
+    duplicate_of INTEGER,
+    unverified INTEGER DEFAULT 0,
+    referral_note TEXT,
+    notes TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ticket_events (
+    id INTEGER PRIMARY KEY,
+    ticket_id INTEGER NOT NULL,
+    status TEXT,
+    actor TEXT,
+    reason TEXT DEFAULT '',
+    link TEXT,
+    link_kind TEXT,
+    time TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS queue_items (
+    id INTEGER PRIMARY KEY,
+    ticket_id INTEGER,
+    kind TEXT,
+    reason TEXT,
+    page_link TEXT,
+    question_text TEXT,
+    resolved_at TEXT
+);
+CREATE TABLE IF NOT EXISTS answers (
+    id INTEGER PRIMARY KEY,
+    question_text TEXT,
+    normalized_key TEXT,
+    answer TEXT,
+    source TEXT,
+    times_used INTEGER DEFAULT 0,
+    last_used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS resumes (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    tags TEXT,
+    file_path TEXT,
+    pinned INTEGER DEFAULT 0,
+    added_at TEXT
+);
+CREATE TABLE IF NOT EXISTS runs (
+    id INTEGER PRIMARY KEY,
+    kind TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    summary TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+"""
+
+
+class MigrationError(RuntimeError):
+    """The migration could not run safely."""
+
+
+def create_schema(conn: sqlite3.Connection) -> None:
+    """Create the eight new tables and indexes (idempotent)."""
+    for stmt in _SCHEMA.split(";"):
+        if stmt.strip():
+            conn.execute(stmt)
+    conn.commit()
+
+
+def backfill_jobs(conn: sqlite3.Connection) -> None:
+    """Fill normalized title/location and last_seen_at for rows that lack them."""
+    rows = conn.execute(
+        "SELECT url, title, location FROM jobs "
+        "WHERE title_normalized IS NULL OR location_normalized IS NULL"
+    ).fetchall()
+    for url, title, location in rows:
+        conn.execute(
+            "UPDATE jobs SET title_normalized = ?, location_normalized = ? WHERE url = ?",
+            (normalize_text(title), normalize_text(location), url),
+        )
+    conn.execute("UPDATE jobs SET last_seen_at = discovered_at WHERE last_seen_at IS NULL")
+    conn.commit()
+
+
+def _open_readonly(path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30)
+
+
+def needs_migration(db_path: Path | str) -> bool:
+    """True when an existing database file would be changed by the migration.
+
+    Uses a separate read-only connection; never writes.
+    """
+    path = Path(db_path)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    conn = _open_readonly(path)
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "jobs" not in tables:
+            return False
+        if any(t not in tables for t in NEW_TABLES):
+            return True
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+        if any(c not in cols for c in NEW_JOBS_COLUMNS):
+            return True
+        if conn.execute(
+            "SELECT 1 FROM jobs WHERE title_normalized IS NULL OR location_normalized IS NULL "
+            "OR last_seen_at IS NULL AND discovered_at IS NOT NULL LIMIT 1"
+        ).fetchone():
+            return True
+        if conn.execute(
+            "SELECT 1 FROM jobs j WHERE (COALESCE(j.apply_status, '') != '' "
+            "OR COALESCE(j.tailored_resume_path, '') != '') "
+            "AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.job_url = j.url) LIMIT 1"
+        ).fetchone():
+            return True
+        return False
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        conn.close()
+
+
+def backup_if_needed(db_path: Path | str) -> Path | None:
+    """Copy the database next to itself when the migration would change it.
+
+    Returns the backup path, or None when no backup was needed.
+    Raises MigrationError (database untouched) if the backup cannot be written.
+    """
+    path = Path(db_path)
+    if not needs_migration(path):
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = path.with_name(f"{path.name}.bak-{stamp}")
+    n = 0
+    while target.exists():
+        n += 1
+        target = path.with_name(f"{path.name}.bak-{stamp}-{n}")
+    src = dst = None
+    try:
+        src = _open_readonly(path)
+        dst = sqlite3.connect(str(target))
+        src.backup(dst)
+    except (OSError, sqlite3.Error) as exc:
+        if dst is not None:
+            dst.close()
+            dst = None
+        target.unlink(missing_ok=True)
+        raise MigrationError(f"Backup failed; the database was not changed: {exc}") from exc
+    finally:
+        if dst is not None:
+            dst.close()
+        if src is not None:
+            src.close()
+    return target
+
+
+def migrate_database(db_path: Path | str) -> Path | None:
+    """Back up (if needed) and migrate the database; return the backup path or None."""
+    from hireember.database import _init_db
+
+    _, backup = _init_db(db_path)
+    return backup
