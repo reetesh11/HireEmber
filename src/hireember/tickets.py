@@ -211,8 +211,65 @@ def set_status(conn: sqlite3.Connection, ticket_id: int, status: str, *,
     ticket = get_ticket(conn, ticket_id)
     if ticket["status"] == status:
         return
+    if status == "started":
+        other = _find_duplicate(conn, ticket)
+        was_blocked = (ticket["status"] == "blocked for human"
+                       and ticket["status_reason"] == "duplicate" and ticket["duplicate_of"])
+        if other is not None or was_blocked:
+            if override_reason is not None:
+                if not override_reason.strip():
+                    raise OverrideReasonError()
+                matched_id = other if other is not None else ticket["duplicate_of"]
+                matched = str(matched_id)
+                conn.execute("UPDATE tickets SET duplicate_of = ? WHERE id = ?",
+                             (matched_id, ticket_id))
+                _add_event(conn, ticket_id, ticket["status"], "user", override_reason.strip(),
+                           matched, "override")
+                _write_status(conn, ticket_id, status, actor, reason, link, link_kind)
+                conn.commit()
+                return
+            if was_blocked:
+                raise DuplicateTicketError(ticket_id, ticket["duplicate_of"])
+            _write_status(conn, ticket_id, "blocked for human", "system", "duplicate",
+                          str(other), "duplicate-of")
+            conn.execute("UPDATE tickets SET duplicate_of = ? WHERE id = ?", (other, ticket_id))
+            conn.commit()
+            raise DuplicateTicketError(ticket_id, other)
     _write_status(conn, ticket_id, status, actor, reason, link, link_kind)
     conn.commit()
+
+
+_BLOCKING_STATUSES = ("started", "applying", "blocked for human", "applied")
+_APP_URL = "COALESCE(NULLIF(TRIM(j.application_url), ''), j.url)"
+_COMPANY = "LOWER(TRIM(COALESCE(CASE WHEN j.company_id IS NOT NULL THEN c.name ELSE j.site END, '')))"
+_JOB_FROM = "FROM jobs j LEFT JOIN companies c ON c.id = j.company_id"
+
+
+def _find_duplicate(conn: sqlite3.Connection, ticket: dict) -> int | None:
+    """Lowest id of another blocking ticket that matches by application URL or text key."""
+    mine = conn.execute(
+        f"SELECT {_APP_URL}, {_COMPANY}, COALESCE(j.title_normalized, ''), "
+        f"COALESCE(j.location_normalized, '') {_JOB_FROM} WHERE j.url = ?",
+        (ticket["job_url"],),
+    ).fetchone()
+    if mine is None:
+        return None
+    app_url, company, title, location = mine
+    marks = ",".join("?" * len(_BLOCKING_STATUSES))
+    text_match = "0"
+    params: list = [ticket["id"], *_BLOCKING_STATUSES, app_url]
+    if company and title and location:
+        text_match = (f"({_COMPANY} = ? AND COALESCE(j.title_normalized, '') = ? "
+                      "AND COALESCE(j.location_normalized, '') = ?)")
+        params += [company, title, location]
+    row = conn.execute(
+        f"SELECT t.id FROM tickets t JOIN jobs j ON j.url = t.job_url "
+        f"LEFT JOIN companies c ON c.id = j.company_id "
+        f"WHERE t.id != ? AND t.status IN ({marks}) AND ({_APP_URL} = ? OR {text_match}) "
+        "ORDER BY t.id LIMIT 1",
+        params,
+    ).fetchone()
+    return row[0] if row else None
 
 
 def _write_status(conn, ticket_id, status, actor, reason, link, link_kind) -> None:
