@@ -41,3 +41,15 @@ def test_company_manual_and_list(conn):
     assert 'Company "acme" is no longer manual-only.' in off.output
     bad = runner.invoke(app, ["company", "manual", "Nobody"])
     assert bad.exit_code == 1 and 'No company named "Nobody".' in bad.output
+
+
+def test_queue_ready_command(conn):
+    tid = set_job_score(conn, "u1", 8)
+    cur = conn.execute("INSERT INTO queue_items (ticket_id, kind, reason, page_link, question_text) "
+                       "VALUES (?, 'captcha', 'captcha', 'http://p', 'Acme')", (tid,))
+    conn.commit()
+    runner = CliRunner()
+    ok = runner.invoke(app, ["queue", "ready", str(cur.lastrowid)])
+    assert ok.exit_code == 0 and f"Ticket {tid} is ready to resume." in ok.output
+    again = runner.invoke(app, ["queue", "ready", str(cur.lastrowid)])
+    assert again.exit_code == 1 and "not found or already resolved" in again.output

@@ -441,10 +441,11 @@ def queue_list() -> None:
         console.print("No open queue items.")
         return
     table = Table(title="Queue", show_header=True, header_style="bold cyan")
-    for column in ("Id", "Ticket", "Kind", "Question"):
-        table.add_column(column)
+    for column in ("Id", "Ticket", "Kind", "Company", "Page", "Question"):
+        table.add_column(column, overflow="fold")
     for i in items:
-        table.add_row(str(i["id"]), str(i["ticket_id"] or ""), i["kind"] or "", i["question_text"] or "")
+        table.add_row(str(i["id"]), str(i["ticket_id"] or ""), i["kind"] or "", i["company"] or "",
+                      i["page_link"] or "", i["question_text"] or "")
     console.print(table)
 
 
@@ -461,6 +462,22 @@ def queue_answer(
 
     try:
         result = answer_queue_item(get_connection(), item_id, answer)
+    except QueueError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(result.message, markup=False)
+
+
+@queue_app.command("ready")
+def queue_ready(item_id: int = typer.Argument(..., help="Queue item id.")) -> None:
+    """Mark a handled item (sign-in, CAPTCHA, review...) ready and return its ticket to pending."""
+    _bootstrap()
+
+    from hireember.answers import QueueError, ready_queue_item
+    from hireember.database import get_connection
+
+    try:
+        result = ready_queue_item(get_connection(), item_id)
     except QueueError as e:
         console.print(str(e), markup=False)
         raise typer.Exit(1)

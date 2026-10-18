@@ -57,3 +57,37 @@ def test_queue_answer_errors_and_single_open_item(env):
         answers.answer_queue_item(conn, 99, "x")
     res = answers.answer_queue_item(conn, a.queue_item_id, "Because")
     assert res.saved and get_ticket(conn, tid)["status"] == "pending"
+
+
+def test_match_answer_returns_answer_id(env):
+    conn, tid = env
+    aid = answers.save_answer(conn, "Salary", "100k")
+    assert answers.match_answer(conn, tid, "salary").answer_id == aid
+
+
+def test_ready_and_answer_refuse_each_others_kinds(env):
+    conn, tid = env
+    cur = conn.execute("INSERT INTO queue_items (ticket_id, kind, reason, page_link, question_text) "
+                       "VALUES (?, 'captcha', 'captcha', 'http://p', 'J')", (tid,))
+    conn.commit()
+    ready_id = cur.lastrowid
+    question = answers.match_answer(conn, tid, "Why?").queue_item_id
+    with pytest.raises(answers.QueueError, match='queue ready'):
+        answers.answer_queue_item(conn, ready_id, "x")
+    with pytest.raises(answers.QueueError, match='queue answer'):
+        answers.ready_queue_item(conn, question)
+
+
+def test_ready_sets_resume_link_and_list_queue_has_company_and_page(env):
+    conn, tid = env
+    cur = conn.execute("INSERT INTO queue_items (ticket_id, kind, reason, page_link, question_text) "
+                       "VALUES (?, 'captcha', 'captcha', 'http://p', 'J')", (tid,))
+    conn.commit()
+    tickets_mod = answers.tickets
+    tickets_mod.set_status(conn, tid, "blocked for human", reason="captcha")
+    [row] = answers.list_queue(conn)
+    assert row["page_link"] == "http://p" and row["company"] == "S"
+    answers.ready_queue_item(conn, cur.lastrowid)
+    t = get_ticket(conn, tid)
+    assert t["status"] == "pending" and t["status_reason"] == "ready"
+    assert t["resume_link"] == "http://p"
