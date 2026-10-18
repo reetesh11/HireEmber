@@ -157,6 +157,7 @@ def apply(
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
+    review: bool = typer.Option(False, "--review", help="Stop before every submit so you can look at the form."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     from hireember.config import is_linkedin_url
@@ -191,6 +192,14 @@ def apply(
         return
 
     # --- Full apply mode ---
+
+    # Check 0: never touch the user's own Chrome profile
+    from hireember.apply.chrome import DefaultProfileError, check_worker_profiles
+    try:
+        check_worker_profiles(workers)
+    except DefaultProfileError as e:
+        console.print(str(e), markup=False, soft_wrap=True)
+        raise typer.Exit(code=1)
 
     # Check 1: Tier 3 required (Claude Code CLI + Chrome)
     check_tier(3, "auto-apply")
@@ -259,6 +268,7 @@ def apply(
         dry_run=dry_run,
         continuous=continuous,
         workers=workers,
+        review=True if review else None,
     )
 
 
@@ -329,8 +339,9 @@ def status() -> None:
     from hireember.database import get_connection
 
     blocked = get_connection().execute(
-        "SELECT t.id, j.title, t.status, t.status_reason FROM tickets t "
-        "LEFT JOIN jobs j ON j.url = t.job_url WHERE t.status = 'blocked for human' ORDER BY t.id"
+        "SELECT t.id, j.title, t.status, t.status_reason, t.not_before FROM tickets t "
+        "LEFT JOIN jobs j ON j.url = t.job_url WHERE t.status = 'blocked for human' "
+        "OR (t.status = 'pending' AND t.status_reason LIKE 'limit:%') ORDER BY t.id"
     ).fetchall()
     if blocked:
         attention = Table(title="\nTickets needing attention", show_header=True, header_style="bold red")
@@ -338,8 +349,11 @@ def status() -> None:
         attention.add_column("Job", overflow="fold")
         attention.add_column("Status")
         attention.add_column("Reason", overflow="fold")
-        for ticket_id, title, status_name, reason in blocked:
-            attention.add_row(str(ticket_id), title or "", status_name, reason or "")
+        for ticket_id, title, status_name, reason, not_before in blocked:
+            reason = reason or ""
+            if not_before and "until" not in reason:
+                reason += f" (until {not_before[:16].replace('T', ' ')})"
+            attention.add_row(str(ticket_id), title or "", status_name, reason)
         console.print(attention)
 
     console.print()
