@@ -61,6 +61,6 @@ def test_non_dict_search_cfg_is_missing(pkg_config):
 def test_run_checks_survives_broken_searches_yaml(pkg_config, isolated_db):
     config.SEARCH_CONFIG_PATH.write_text("sites: [indeed\n", encoding="utf-8")
     checks = doctor.run_checks()
-    assert len(checks) == 12
+    assert len(checks) == 11
     sources = [c for c in checks if c.name == "Job sources"]
     assert sources[0].status == "MISSING"

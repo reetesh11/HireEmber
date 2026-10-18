@@ -205,12 +205,6 @@ def _check_llm() -> Check:
     return Check("LLM API key", "MISSING", f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'hireember init')")
 
 
-def _check_capsolver() -> Check:
-    if os.environ.get("CAPSOLVER_API_KEY"):
-        return Check("CapSolver API key", "OK", "CAPTCHA solving enabled")
-    return Check("CapSolver API key", "optional", "Set CAPSOLVER_API_KEY in .env for CAPTCHA solving")
-
-
 def run_checks() -> list[Check]:
     """Run every doctor check, in display order."""
     return [
@@ -225,5 +219,4 @@ def run_checks() -> list[Check]:
         check_node(),
         check_database(),
         check_sources(),
-        _check_capsolver(),
     ]

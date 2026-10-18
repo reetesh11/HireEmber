@@ -7,7 +7,7 @@ from hireember.database import close_connection, init_db
 
 ORDER = [
     "Python", "profile.json", "resume.txt", "searches.yaml", "python-jobspy", "LLM API key",
-    "Claude Code CLI", "Chrome/Chromium", "Node.js", "Database", "Job sources", "CapSolver API key",
+    "Claude Code CLI", "Chrome/Chromium", "Node.js", "Database", "Job sources",
 ]
 
 
