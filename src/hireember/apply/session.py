@@ -198,7 +198,12 @@ class GateSession:
 
     def before_submit(self) -> str:
         self._check_not_closed()
-        if self._review:
+        marker = f"skip_review_once:{self.ticket_id}"
+        skip_once = tickets.get_setting(self.conn, marker) == "1"
+        if skip_once:
+            self.conn.execute("DELETE FROM settings WHERE key = ?", (marker,))
+            self.conn.commit()
+        if self._review and not skip_once:
             self._queue_stop(REASON_REVIEW, "")
             return "stop"
         return "submit"

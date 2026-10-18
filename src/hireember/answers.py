@@ -191,6 +191,8 @@ def ready_queue_item(conn: sqlite3.Connection, item_id: int) -> QueueAnswerResul
                      (item["page_link"] or None, 1 if item["kind"] == "outcome unknown" else 0,
                       ticket_id))
     conn.commit()
+    if ticket_id is not None and item["kind"] == "review before submit":
+        tickets.set_setting(conn, f"skip_review_once:{ticket_id}", "1")
     if ticket_id is not None and tickets.get_ticket(conn, ticket_id)["status"] == "blocked for human":
         tickets.set_status(conn, ticket_id, "pending", actor="user", reason="ready")
     return QueueAnswerResult(True, ticket_id, f"Ticket {ticket_id} is ready to resume.")
