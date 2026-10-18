@@ -120,3 +120,33 @@ def test_src_has_no_capsolver_or_gmail():
     for path in (ROOT / "src").rglob("*.py"):
         text = path.read_text(encoding="utf-8").lower()
         assert "capsolver" not in text and "gmail" not in text, path
+
+
+class _FakeProc:
+    pid = 0
+    returncode = 0
+
+    def __init__(self, *a, **k):
+        self.stdin = type("S", (), {"write": lambda s, t: None, "close": lambda s: None})()
+        self.stdout = iter([json.dumps({"type": "result", "result": "done"}) + "\n"])
+
+    def wait(self, timeout=None):
+        return 0
+
+    def poll(self):
+        return 0
+
+
+def test_run_job_real_path_with_stubbed_subprocess(conn, tmp_path, monkeypatch):
+    tid = add(conn, 1)
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(launcher.subprocess, "Popen", _FakeProc)
+    monkeypatch.setattr(launcher, "reset_worker_dir", lambda i: tmp_path)
+    monkeypatch.setattr(launcher.prompt_mod, "build_prompt", lambda **k: "prompt")
+    session = launcher.GateSession(conn, tid, review_before_submit=True)
+    job = {"url": "https://j/1", "title": "T1", "site": "Acme", "tailored_resume_path": None}
+    status, _ = launcher.run_job(job, 9222, session=session)
+    cfg = json.loads((tmp_path / ".mcp-apply-0.json").read_text())
+    assert "--review" in cfg["mcpServers"]["hireember"]["args"]
+    assert status == "failed:no_result"

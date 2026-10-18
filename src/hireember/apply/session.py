@@ -134,6 +134,11 @@ class GateSession:
         self.state = "blocked"
         return FieldDecision("stop", None, "", kind, item_id)
 
+    @property
+    def review(self) -> bool:
+        """Whether review before submit is on for this session."""
+        return bool(self._review)
+
     def refresh_state(self) -> str:
         """Adopt the outcome another process (the gate server) wrote to the ticket."""
         ticket = tickets.get_ticket(self.conn, self.ticket_id)
