@@ -29,6 +29,13 @@ class TicketNotFoundError(TicketError):
         super().__init__(f"Ticket {ticket_id} not found.")
 
 
+class CompanyNotFoundError(TicketError):
+    """No company with the given name."""
+
+    def __init__(self, name: str):
+        super().__init__(f'No company named "{name}".')
+
+
 class DuplicateTicketError(TicketError):
     """The ticket duplicates a ticket that is already in progress or done."""
 
@@ -95,6 +102,52 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
         (key, value),
     )
     conn.commit()
+
+
+def get_setting(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
+    """Value of a settings row, or ``default`` when missing."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row and row[0] is not None else default
+
+
+def set_company_manual(conn: sqlite3.Connection, name: str, manual: bool = True) -> int:
+    """Flag (or unflag) a company as manual-only; return its id."""
+    clean = (name or "").strip()
+    row = conn.execute(
+        "SELECT id FROM companies WHERE lower(trim(name)) = ? ORDER BY id LIMIT 1",
+        (clean.lower(),),
+    ).fetchone()
+    if row is None:
+        raise CompanyNotFoundError(clean)
+    conn.execute("UPDATE companies SET manual_only = ? WHERE id = ?", (1 if manual else 0, row[0]))
+    conn.commit()
+    return row[0]
+
+
+def list_companies(conn: sqlite3.Connection) -> list[dict]:
+    """Companies ordered by name with their manual-only flag."""
+    rows = conn.execute(
+        "SELECT id, name, COALESCE(manual_only, 0) FROM companies ORDER BY lower(name), id"
+    ).fetchall()
+    return [{"id": r[0], "name": r[1], "manual_only": bool(r[2])} for r in rows]
+
+
+def is_manual_company(conn: sqlite3.Connection, ticket_id: int) -> bool:
+    """True when the ticket's company is flagged manual-only."""
+    ticket = get_ticket(conn, ticket_id)
+    row = conn.execute(
+        "SELECT j.company_id, j.site FROM jobs j WHERE j.url = ?", (ticket["job_url"],)
+    ).fetchone()
+    if row is None:
+        return False
+    if row[0] is not None:
+        found = conn.execute("SELECT manual_only FROM companies WHERE id = ?", (row[0],)).fetchone()
+    else:
+        found = conn.execute(
+            "SELECT manual_only FROM companies WHERE lower(trim(name)) = ? ORDER BY id LIMIT 1",
+            ((row[1] or "").strip().lower(),),
+        ).fetchone()
+    return bool(found and found[0])
 
 
 def get_threshold(conn: sqlite3.Connection) -> int:
@@ -272,6 +325,26 @@ def set_status(conn: sqlite3.Connection, ticket_id: int, status: str, *,
             conn.commit()
             raise DuplicateTicketError(ticket_id, other)
     _write_status(conn, ticket_id, status, actor, reason, link, link_kind)
+    conn.commit()
+
+
+def set_reason(conn: sqlite3.Connection, ticket_id: int, reason: str, *, actor: str = "system",
+               not_before: str | None = None) -> None:
+    """Rewrite the status reason (and not-before time) without changing the status.
+
+    A history event is written only when the reason changes.
+    """
+    if actor not in _ACTORS:
+        raise ValueError(f"Invalid actor {actor!r}. Allowed actors: {', '.join(_ACTORS)}.")
+    ticket = get_ticket(conn, ticket_id)
+    changed = (ticket["status_reason"] or "") != reason
+    now = _now()
+    conn.execute(
+        "UPDATE tickets SET status_reason = ?, not_before = ?, updated_at = ? WHERE id = ?",
+        (reason, not_before, now if changed else ticket["updated_at"], ticket_id),
+    )
+    if changed:
+        _add_event(conn, ticket_id, ticket["status"], actor, reason, when=now)
     conn.commit()
 
 

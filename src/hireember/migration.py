@@ -96,12 +96,50 @@ class MigrationError(RuntimeError):
     """The migration could not run safely."""
 
 
+_ATTEMPT_LOG = """
+CREATE TABLE IF NOT EXISTS attempt_log (
+    id INTEGER PRIMARY KEY,
+    ticket_id INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
+    time TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    field TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    detail TEXT DEFAULT ''
+)
+"""
+
+_PHASE3_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
+    "companies": (("manual_only", "INTEGER DEFAULT 0"),),
+    "tickets": (
+        ("not_before", "TEXT"),
+        ("submitted_at", "TEXT"),
+        ("confirmation_link", "TEXT"),
+        ("session_link", "TEXT"),
+        ("resume_link", "TEXT"),
+    ),
+}
+
+
+def ensure_phase3_schema(conn: sqlite3.Connection) -> None:
+    """Add the apply-stage columns and the attempt log (idempotent, additive)."""
+    for table, columns in _PHASE3_COLUMNS.items():
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, ddl in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+    conn.execute(_ATTEMPT_LOG)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attempt_log_ticket ON attempt_log(ticket_id)")
+    conn.commit()
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
-    """Create the eight new tables and indexes (idempotent)."""
+    """Create the eight new tables and indexes (idempotent), then the phase 3 additions."""
     for stmt in _SCHEMA.split(";"):
         if stmt.strip():
             conn.execute(stmt)
     conn.commit()
+    ensure_phase3_schema(conn)
 
 
 def backfill_jobs(conn: sqlite3.Connection) -> None:
