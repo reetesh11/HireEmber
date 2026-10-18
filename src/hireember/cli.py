@@ -468,6 +468,42 @@ def queue_answer(
 
 
 # ---------------------------------------------------------------------------
+# Ticket details
+# ---------------------------------------------------------------------------
+
+ticket_app = typer.Typer(help="Ticket details.", no_args_is_help=True)
+app.add_typer(ticket_app, name="ticket")
+
+
+@ticket_app.command("log")
+def ticket_log(ticket_id: int = typer.Argument(..., help="Ticket id.")) -> None:
+    """Show what each apply attempt did on a ticket."""
+    _bootstrap()
+
+    from hireember.apply.attempts import get_log
+    from hireember.database import get_connection
+    from hireember.tickets import TicketNotFoundError, get_ticket
+
+    conn = get_connection()
+    try:
+        get_ticket(conn, ticket_id)
+    except TicketNotFoundError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    rows = get_log(conn, ticket_id)
+    if not rows:
+        console.print(f"No attempts logged for ticket {ticket_id}.")
+        return
+    table = Table(title=f"Ticket {ticket_id} log", show_header=True, header_style="bold cyan")
+    for column in ("Attempt", "Time", "Step", "Field", "Source", "Detail"):
+        table.add_column(column, overflow="fold")
+    for r in rows:
+        table.add_row(str(r["attempt"]), r["time"], r["kind"], r["field"] or "",
+                      r["source"] or "", r["detail"] or "")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Base resumes
 # ---------------------------------------------------------------------------
 
