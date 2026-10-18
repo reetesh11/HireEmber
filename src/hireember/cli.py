@@ -468,6 +468,54 @@ def queue_answer(
 
 
 # ---------------------------------------------------------------------------
+# Companies
+# ---------------------------------------------------------------------------
+
+company_app = typer.Typer(help="Companies and the manual-only flag.", no_args_is_help=True)
+app.add_typer(company_app, name="company")
+
+
+@company_app.command("manual")
+def company_manual(
+    name: str = typer.Argument(..., help="Company name."),
+    off: bool = typer.Option(False, "--off", help="Remove the manual-only flag."),
+) -> None:
+    """Mark a company as manual-only: its tickets wait for you instead of the agent."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.tickets import CompanyNotFoundError, set_company_manual
+
+    try:
+        set_company_manual(get_connection(), name, not off)
+    except CompanyNotFoundError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    state = "no longer manual-only" if off else "now manual-only"
+    console.print(f'Company "{name}" is {state}.', markup=False)
+
+
+@company_app.command("list")
+def company_list() -> None:
+    """Show every company and whether it is manual-only."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.tickets import list_companies
+
+    rows = list_companies(get_connection())
+    if not rows:
+        console.print("No companies yet.")
+        return
+    table = Table(title="Companies", show_header=True, header_style="bold cyan")
+    for column in ("Id", "Name", "Manual-only"):
+        table.add_column(column)
+    for r in rows:
+        table.add_row(str(r["id"]), r["name"], "yes" if r["manual_only"] else "no")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Ticket details
 # ---------------------------------------------------------------------------
 

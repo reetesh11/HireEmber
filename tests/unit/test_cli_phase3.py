@@ -29,3 +29,15 @@ def test_ticket_log_empty_and_unknown(conn):
     missing = CliRunner().invoke(app, ["ticket", "log", "999"])
     assert f"No attempts logged for ticket {tid}." in empty.output
     assert missing.exit_code == 1 and "Ticket 999 not found." in missing.output
+
+
+def test_company_manual_and_list(conn):
+    runner = CliRunner()
+    on = runner.invoke(app, ["company", "manual", "acme"])
+    assert on.exit_code == 0 and 'Company "acme" is now manual-only.' in on.output
+    listed = runner.invoke(app, ["company", "list"])
+    assert "Acme" in listed.output and "yes" in listed.output
+    off = runner.invoke(app, ["company", "manual", "acme", "--off"])
+    assert 'Company "acme" is no longer manual-only.' in off.output
+    bad = runner.invoke(app, ["company", "manual", "Nobody"])
+    assert bad.exit_code == 1 and 'No company named "Nobody".' in bad.output
