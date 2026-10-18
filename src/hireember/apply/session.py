@@ -52,6 +52,26 @@ class SessionError(Exception):
     """The session was used in a way that is not allowed."""
 
 
+def queue_hand_off(conn: sqlite3.Connection, ticket_id: int, kind: str, page_link: str = "") -> int:
+    """Block the ticket with ``kind`` and open (or reuse) its queue item; return the item id."""
+    tickets.set_status(conn, ticket_id, "blocked for human", reason=kind)
+    row = conn.execute(
+        "SELECT id FROM queue_items WHERE ticket_id = ? AND kind = ? AND resolved_at IS NULL "
+        "ORDER BY id LIMIT 1", (ticket_id, kind)).fetchone()
+    if row:
+        conn.execute("UPDATE queue_items SET page_link = ? WHERE id = ?", (page_link, row[0]))
+        conn.commit()
+        return row[0]
+    company = conn.execute(
+        "SELECT COALESCE(c.name, j.site, '') FROM tickets t JOIN jobs j ON j.url = t.job_url "
+        "LEFT JOIN companies c ON c.id = j.company_id WHERE t.id = ?", (ticket_id,)).fetchone()
+    cur = conn.execute(
+        "INSERT INTO queue_items (ticket_id, kind, reason, page_link, question_text) "
+        "VALUES (?, ?, ?, ?, ?)", (ticket_id, kind, kind, page_link, company[0] if company else ""))
+    conn.commit()
+    return cur.lastrowid
+
+
 @dataclass
 class FieldDecision:
     action: str            # "fill" or "stop"
@@ -85,33 +105,12 @@ class GateSession:
     def _log(self, kind: str, field: str = "", source: str = "", detail: str = "") -> None:
         attempts.log_step(self.conn, self.ticket_id, self.attempt, kind, field, source, detail)
 
-    def _company_name(self) -> str:
-        row = self.conn.execute(
-            "SELECT COALESCE(c.name, j.site, '') FROM tickets t JOIN jobs j ON j.url = t.job_url "
-            "LEFT JOIN companies c ON c.id = j.company_id WHERE t.id = ?", (self.ticket_id,)).fetchone()
-        return row[0] if row else ""
-
     def _check_not_closed(self) -> None:
         if self.state == "closed":
             raise SessionError(f"Ticket {self.ticket_id} is closed.")
 
     def _queue_stop(self, kind: str, page_link: str) -> int:
-        """Block the ticket with ``kind`` and open (or reuse) one queue item for it."""
-        tickets.set_status(self.conn, self.ticket_id, "blocked for human", reason=kind)
-        row = self.conn.execute(
-            "SELECT id FROM queue_items WHERE ticket_id = ? AND kind = ? AND resolved_at IS NULL "
-            "ORDER BY id LIMIT 1", (self.ticket_id, kind)).fetchone()
-        if row:
-            self.conn.execute("UPDATE queue_items SET page_link = ? WHERE id = ?", (page_link, row[0]))
-            self.conn.commit()
-            item_id = row[0]
-        else:
-            cur = self.conn.execute(
-                "INSERT INTO queue_items (ticket_id, kind, reason, page_link, question_text) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (self.ticket_id, kind, kind, page_link, self._company_name()))
-            self.conn.commit()
-            item_id = cur.lastrowid
+        item_id = queue_hand_off(self.conn, self.ticket_id, kind, page_link)
         self.state = "blocked"
         return item_id
 
