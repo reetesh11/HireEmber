@@ -97,7 +97,9 @@ class GateSession:
         self._review = review_before_submit
         self._noted: set[str] = set()
         self.resume_from: str | None = ticket.get("resume_link") or None
-        if self.resume_from:
+        if self.resume_from and not any(
+                r["kind"] == "resume" and r["attempt"] == self.attempt and r["detail"] == self.resume_from
+                for r in attempts.get_log(conn, ticket_id)):
             self._log("resume", detail=self.resume_from)
 
     # -- helpers ------------------------------------------------------------
@@ -131,6 +133,19 @@ class GateSession:
         self._log("stop", field=question)
         self.state = "blocked"
         return FieldDecision("stop", None, "", kind, item_id)
+
+    def refresh_state(self) -> str:
+        """Adopt the outcome another process (the gate server) wrote to the ticket."""
+        ticket = tickets.get_ticket(self.conn, self.ticket_id)
+        if ticket["status"] == "applied":
+            self.state = "submitted"
+        elif ticket["status"] == "closed":
+            self.state = "closed"
+        elif ticket["status"] == "blocked for human":
+            self.state = "blocked"
+        elif ticket["submitted_at"] and self.state == "open":
+            self.state = "submit_pressed"
+        return self.state
 
     # -- the agent's questions ----------------------------------------------
 
