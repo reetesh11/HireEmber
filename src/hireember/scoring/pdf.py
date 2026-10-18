@@ -355,6 +355,50 @@ def render_pdf(html: str, output_path: str) -> None:
         browser.close()
 
 
+def write_text_pdf(text: str, output_path: str | Path) -> Path:
+    """Write plain text as a simple one-font PDF without a browser."""
+    import textwrap
+
+    lines: list[str] = []
+    for raw in text.splitlines() or [""]:
+        lines.extend(textwrap.wrap(raw, 95, replace_whitespace=False, drop_whitespace=False) or [""])
+    per_page = 58
+    pages = [lines[i:i + per_page] for i in range(0, len(lines), per_page)] or [[]]
+
+    def esc(line: str) -> bytes:
+        data = line.encode("latin-1", "replace")
+        return data.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
+
+    objects: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>", b""]
+    kids = []
+    for n, page_lines in enumerate(pages):
+        page_id, content_id = 4 + n * 2, 5 + n * 2
+        kids.append(f"{page_id} 0 R")
+        stream = b"BT /F1 10 Tf 12 TL 50 750 Td\n" + b"".join(
+            b"(" + esc(line) + b") '\n" for line in page_lines) + b"ET"
+        objects.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
+                       + f"{content_id} 0 R >>".encode())
+        objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream
+                       + b"\nendstream")
+    objects[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>".encode()
+    objects.insert(2, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").encode()
+    path = Path(output_path)
+    path.write_bytes(bytes(out))
+    return path
+
+
 # ── Public API ───────────────────────────────────────────────────────────
 
 def convert_to_pdf(
@@ -385,7 +429,11 @@ def convert_to_pdf(
 
     out = output_path or text_path.with_suffix(".pdf")
     out = Path(out)
-    render_pdf(html, str(out))
+    try:
+        render_pdf(html, str(out))
+    except Exception as e:
+        log.debug("Browser PDF render failed (%s); writing a plain-text PDF instead.", e)
+        write_text_pdf(text, out)
     log.info("PDF generated: %s", out)
     return out
 

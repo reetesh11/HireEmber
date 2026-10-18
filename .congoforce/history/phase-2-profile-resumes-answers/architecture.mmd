@@ -1,0 +1,42 @@
+flowchart LR
+  cli[cli.py<br/>init, answers, queue, resume, status]:::changed
+  wiz[wizard/init.py]:::changed
+  prof[profile.py]:::new
+  ans[answers.py]:::new
+  res[resumes.py]:::new
+  gate[gating.py]:::new
+  scorer[scoring/scorer.py]:::changed
+  tailor[scoring/tailor.py]:::changed
+  val[scoring/validator.py]:::changed
+  cover[scoring/cover_letter.py]
+  pdf[scoring/pdf.py]:::changed
+  tick[tickets.py]:::changed
+  llm[llm.py get_client]
+  db[(answers, queue_items, resumes, tickets, ticket_events)]
+  files[(tailored_resumes/ cover_letters/ base_resumes/)]:::changed
+  cli --> wiz
+  cli --> ans
+  cli --> res
+  wiz --> prof
+  wiz --> ans
+  prof --> ans
+  scorer --> gate
+  tailor --> gate
+  gate --> res
+  gate --> prof
+  gate --> scorer
+  gate --> tailor
+  gate --> cover
+  tailor --> val
+  gate --> pdf
+  gate --> tick
+  ans --> tick
+  res --> db
+  ans --> db
+  tick --> db
+  gate --> files
+  res --> files
+  scorer --> llm
+  tailor --> llm
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

@@ -9,10 +9,9 @@ import logging
 import re
 import time
 
-from hireember.config import RESUME_PATH
+from hireember.config import load_profile
 from hireember.database import get_connection, get_jobs_by_stage
 from hireember.llm import get_client
-from hireember.tickets import set_job_score
 
 log = logging.getLogger(__name__)
 
@@ -69,12 +68,29 @@ def _parse_score_response(response: str) -> dict:
     return {"score": score, "keywords": keywords, "reasoning": reasoning}
 
 
-def score_job(resume_text: str, job: dict) -> dict:
+def _preferences_text(profile: dict | None) -> str:
+    """Target roles, location and experience level from the profile, as prompt text."""
+    if not profile:
+        return ""
+    personal = profile.get("personal", {}) or {}
+    experience = profile.get("experience", {}) or {}
+    place = ", ".join(str(personal[k]) for k in ("city", "province_state", "country") if personal.get(k))
+    lines = [
+        ("Target roles", experience.get("target_role")),
+        ("Location", place),
+        ("Experience level", experience.get("years_of_experience_total")),
+    ]
+    body = "\n".join(f"{label}: {value}" for label, value in lines if value)
+    return f"CANDIDATE PREFERENCES:\n{body}\n\n---\n\n" if body else ""
+
+
+def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
     """Score a single job against the resume.
 
     Args:
         resume_text: The candidate's full resume text.
         job: Job dict with keys: title, site, location, full_description.
+        profile: Optional profile; its target roles, location and experience level join the prompt.
 
     Returns:
         {"score": int, "keywords": str, "reasoning": str}
@@ -88,7 +104,7 @@ def score_job(resume_text: str, job: dict) -> dict:
 
     messages = [
         {"role": "system", "content": SCORE_PROMPT},
-        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\nJOB POSTING:\n{job_text}"},
+        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\n{_preferences_text(profile)}JOB POSTING:\n{job_text}"},
     ]
 
     try:
@@ -101,7 +117,10 @@ def score_job(resume_text: str, job: dict) -> dict:
 
 
 def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
-    """Score unscored jobs that have full descriptions.
+    """Score unscored jobs that have full descriptions and create their tickets.
+
+    Each job goes through ``gating.score_job_for_ticket``: a base resume is chosen, the job is
+    scored, and the ticket is skipped, pending or blocked for human.
 
     Args:
         limit: Maximum number of jobs to score in this run.
@@ -110,7 +129,12 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    from hireember.gating import score_job_for_ticket
+
+    try:
+        profile = load_profile()
+    except FileNotFoundError:
+        profile = {}
     conn = get_connection()
 
     if rescore:
@@ -125,40 +149,21 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         log.info("No unscored jobs with descriptions found.")
         return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
 
-    # Convert sqlite3.Row to dicts if needed
-    if jobs and not isinstance(jobs[0], dict):
-        columns = jobs[0].keys()
-        jobs = [dict(zip(columns, row)) for row in jobs]
-
     log.info("Scoring %d jobs sequentially...", len(jobs))
     t0 = time.time()
-    completed = 0
+    scored = 0
     errors = 0
-    results: list[dict] = []
 
-    for job in jobs:
-        result = score_job(resume_text, job)
-        result["url"] = job["url"]
-        completed += 1
-
-        if result["score"] == 0:
+    for number, job in enumerate(jobs, 1):
+        result = score_job_for_ticket(conn, job["url"], profile=profile)
+        if result.score is None:
             errors += 1
-
-        results.append(result)
-
-        log.info(
-            "[%d/%d] score=%d  %s",
-            completed, len(jobs), result["score"], job.get("title", "?")[:60],
-        )
-
-    # Write scores to DB
-    for r in results:
-        set_job_score(conn, r["url"], r["score"], f"{r['keywords']}\n{r['reasoning']}",
-                      commit=False)
-    conn.commit()
+        else:
+            scored += 1
+        log.info("[%d/%d] %s  %s", number, len(jobs), result.status, str(job["title"])[:60])
 
     elapsed = time.time() - t0
-    log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(results), elapsed, len(results) / elapsed if elapsed > 0 else 0)
+    log.info("Done: %d scored, %d blocked in %.1fs", scored, errors, elapsed)
 
     # Score distribution
     dist = conn.execute("""
@@ -169,7 +174,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     distribution = [(row[0], row[1]) for row in dist]
 
     return {
-        "scored": len(results),
+        "scored": scored,
         "errors": errors,
         "elapsed": elapsed,
         "distribution": distribution,

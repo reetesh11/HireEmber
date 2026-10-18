@@ -94,6 +94,74 @@ def sanitize_text(text: str) -> str:
     return text.strip()
 
 
+# ── Profile Fact Checks ───────────────────────────────────────────────────
+
+_METRIC_RE = re.compile(r"\d+(?:\.\d+)?\s?%|\b\d+(?:\.\d+)?\s?[xX]\b|\b\d+(?:\.\d+)?\s?[kKmM]\b")
+
+
+def _first_segment(header: str) -> str:
+    return re.split(r"\s*\|\s*|\s+-\s+", str(header).strip(), maxsplit=1)[0].strip()
+
+
+def _as_list(value) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    return [str(v) for v in value] if isinstance(value, (list, tuple, set)) else []
+
+
+def validate_against_profile(data: dict, profile: dict) -> list[str]:
+    """Reasons why the tailored JSON names things outside the profile's facts and skills boundary.
+
+    An empty list means every employer, project, school, metric and skill is allowed.
+    """
+    facts = profile.get("resume_facts", {}) or {}
+    reasons: list[str] = []
+
+    def add(reason: str) -> None:
+        if reason not in reasons:
+            reasons.append(reason)
+
+    companies = {c.strip().lower() for c in _as_list(facts.get("preserved_companies"))}
+    projects = {p.strip().lower() for p in _as_list(facts.get("preserved_projects"))}
+    schools = [s.strip().lower() for s in _as_list(facts.get("preserved_school"))]
+    metrics = [m.lower() for m in _as_list(facts.get("real_metrics"))]
+
+    experience = [e for e in data.get("experience") or [] if isinstance(e, dict)]
+    project_entries = [e for e in data.get("projects") or [] if isinstance(e, dict)]
+
+    for entry in experience:
+        name = _first_segment(entry.get("header", ""))
+        if name and name.lower() not in companies:
+            add(f'employer "{name}" not in resume facts')
+    for entry in project_entries:
+        name = _first_segment(entry.get("header", ""))
+        if name and name.lower() not in projects:
+            add(f'project "{name}" not in resume facts')
+
+    education = str(data.get("education") or "")
+    if education.strip() and not any(s and s in education.lower() for s in schools):
+        name = _first_segment(education.strip().splitlines()[0])
+        add(f'school "{name}" not in resume facts')
+
+    for entry in experience + project_entries:
+        for bullet in entry.get("bullets") or []:
+            for token in _METRIC_RE.findall(str(bullet)):
+                token = token.strip()
+                if not any(token.lower() in m or token.lower().replace(" ", "") in m.replace(" ", "")
+                           for m in metrics):
+                    add(f'metric "{token}" not in resume facts')
+
+    allowed = _build_skills_set(profile)
+    skills = data.get("skills")
+    values = skills.values() if isinstance(skills, dict) else _as_list(skills)
+    for value in values:
+        for item in (_as_list(value) if isinstance(value, list) else str(value).split(",")):
+            item = item.strip()
+            if item and item.lower() not in allowed:
+                add(f'skill "{item}" not in skills boundary')
+    return reasons
+
+
 # ── JSON Field Validation ─────────────────────────────────────────────────
 
 def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dict:
@@ -119,6 +187,8 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
             errors.append(f"Missing required field: {key}")
     if errors:
         return {"passed": False, "errors": errors, "warnings": warnings}
+
+    errors.extend(validate_against_profile(data, profile))
 
     # Collect all text for bulk checks
     all_text_parts: list[str] = [data["summary"]]

@@ -9,7 +9,7 @@ import typer
 from typer.testing import CliRunner
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-COMMANDS = {"init", "run", "apply", "status", "dashboard", "doctor"}
+COMMANDS = {"init", "run", "apply", "status", "dashboard", "doctor", "answers", "queue", "resume"}
 
 
 def test_help_exits_0_and_lists_exactly_the_six_commands():

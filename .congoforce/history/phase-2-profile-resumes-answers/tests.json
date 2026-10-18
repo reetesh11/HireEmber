@@ -1,0 +1,80 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p2_ac1_init.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "Ten profile groups asked in order, answers stored with source profile, blank re-asked, skip stored, rerun keep/change"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p2_ac2_match.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "match_answer outcomes: answered, unknown, conflict, identical values, dedup of open queue item"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p2_ac3_queue_answer.py",
+      "tests": 6,
+      "expect_red": true,
+      "description": "answer_queue_item stores user answer, resolves, resumes ticket, usage counting, errors, CLI queue/answers"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p2_ac4_storage_sensitive.py",
+      "tests": 25,
+      "expect_red": true,
+      "description": "stored fields, no password key in example/schema, sensitive questions queued and never stored"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p2_ac5_resumes.py",
+      "tests": 8,
+      "expect_red": true,
+      "description": "add/list/pin resumes, choose_resume, ticket resume id pinned and best fit, CLI resume commands"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p2_ac6_validator.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "validate_against_profile reasons, retry limit blocks ticket, status shows reason"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p2_ac7_threshold.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "skip below threshold, exact threshold passes, reasons, no resume, LLM error"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p2_ac8_pdfs.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "ticket holds valid tailored resume and cover letter PDFs; write_text_pdf"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p2_ac9_immutable.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "submitted ticket files unchanged after base resume edit"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p2_unchanged.py",
+      "tests": 3,
+      "expect_red": false,
+      "description": "phase 1 scoring tickets and existing validator behaviour unchanged"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-1 (run_wizard wiring)",
+      "reason": "run_wizard is interactive across many steps; wiring of run_profile_step into hireember init is checked by the verifier by reading code"
+    }
+  ]
+}

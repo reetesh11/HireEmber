@@ -184,6 +184,22 @@ hireember status                        # Pipeline statistics
 hireember dashboard                     # Open HTML results dashboard
 ```
 
+### Answers, queue and base resumes
+
+```
+hireember answers list                  # Stored answers to application questions
+hireember queue list                    # Questions waiting for your answer
+hireember queue answer 3 "Blue"         # Answer queued item 3 and resume its ticket
+hireember resume add cv.txt --name "Backend" --tags "backend,python"
+hireember resume list                   # Base resumes
+hireember resume pin 1                  # Always use resume 1 (hireember resume unpin to clear)
+```
+
+Scoring now needs at least one base resume: run `hireember resume add` first, or tickets are
+blocked with `no base resume`. For a PDF, add a plain-text copy with `--text cv.txt` so it can be scored.
+Passwords, tokens, payment details and government IDs are never stored; questions that ask for them
+are queued and the ticket stays blocked for you.
+
 ---
 
 ## Contributing
