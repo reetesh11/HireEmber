@@ -547,6 +547,88 @@ def company_list() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Model tiers
+# ---------------------------------------------------------------------------
+
+models_app = typer.Typer(help="Model tiers: fast and quality.", no_args_is_help=True)
+app.add_typer(models_app, name="models")
+
+
+def _say(text: str) -> None:
+    console.print(text, markup=False, highlight=False)
+
+
+@models_app.command("show")
+def models_show() -> None:
+    """Show the settings of both tiers. API keys are never printed."""
+    from hireember import models
+
+    try:
+        models.load_models_file()
+    except models.ModelsError as e:
+        _say(str(e))
+        raise typer.Exit(1)
+    _say("Model tiers")
+    for tier in models.TIERS:
+        _say("")
+        _say(tier)
+        try:
+            s = models.resolve_tier(tier)
+        except models.ModelsError as e:
+            _say(f"  {e}" if "not configured" not in str(e) else "  not configured")
+            if "not configured" in str(e):
+                _say(f"  Run 'hireember models set {tier}' or 'hireember init'.")
+            continue
+        _say(f"  provider: {s.provider}")
+        _say(f"  model:    {s.model}")
+        _say(f"  base url: {s.base_url}" + (" (preset)" if s.provider != "custom" else ""))
+        _say(f"  key:      {models.key_origin(s)}")
+        _say(f"  source:   {s.source}")
+
+
+@models_app.command("set")
+def models_set(
+    tier: str = typer.Argument(..., help="fast or quality."),
+    provider: Optional[str] = typer.Option(None, "--provider", help="gemini, openai or custom."),
+    model: Optional[str] = typer.Option(None, "--model", help="Model name."),
+    base_url: Optional[str] = typer.Option(None, "--base-url", help="Endpoint URL (custom provider)."),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="API key, stored in models.toml."),
+) -> None:
+    """Change one tier's settings; fields you leave out are kept."""
+    from hireember import models
+
+    if tier not in models.TIERS:
+        _say("Tier must be 'fast' or 'quality'.")
+        raise typer.Exit(1)
+    if provider is None and model is None and base_url is None and api_key is None:
+        _say("Nothing to change. Pass --provider, --model, --base-url or --api-key.")
+        raise typer.Exit(1)
+    try:
+        path = models.save_tier(tier, provider=provider, model=model, base_url=base_url, api_key=api_key)
+    except (models.ModelsError, ValueError) as e:
+        _say(str(e))
+        raise typer.Exit(1)
+    _say(f"Saved {tier} tier to {path}.")
+
+
+@models_app.command("test")
+def models_test() -> None:
+    """Make one tiny request per tier and report whether it worked."""
+    from hireember import models
+
+    failed = False
+    for tier in models.TIERS:
+        r = models.test_tier(tier)
+        if r.ok:
+            _say(f"{tier:<9}{'ok':<9}{r.model} ({r.seconds:.1f}s)")
+        else:
+            failed = True
+            _say(f"{tier:<9}{'FAILED':<9}{r.message}")
+    if failed:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Ticket details
 # ---------------------------------------------------------------------------
 
