@@ -28,9 +28,9 @@ from hireember.config import (
     ensure_dirs,
 )
 from hireember import answers, config, resumes
-from hireember.resume_extract import MIN_TEXT_CHARS, extract_pdf_text
+from hireember.resume_extract import MIN_TEXT_CHARS, extract_pdf_text, propose_profile
 from hireember.database import init_db
-from hireember.profile import PROFILE_GROUPS, build_profile, group_complete
+from hireember.profile import PROFILE_GROUPS, build_profile, group_complete, stored_answer
 
 console = Console()
 
@@ -146,6 +146,27 @@ def run_resume_step(conn, ask: Callable[..., str] | None = None, *, console: Con
 # Profile
 # ---------------------------------------------------------------------------
 
+_PROPOSAL_FIELDS = {
+    "contact": ("full_name", "email", "phone", "linkedin_url"),
+    "location": ("city", "province_state", "country"),
+}
+
+
+def _resume_proposals() -> dict[str, str]:
+    """Question text -> value found in resume.txt (empty when it is missing or unreadable)."""
+    try:
+        text = config.RESUME_PATH.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    found = propose_profile(text)
+    result: dict[str, str] = {}
+    for group in PROFILE_GROUPS:
+        for question, field in zip(group.questions, _PROPOSAL_FIELDS.get(group.key, ())):
+            if field in found:
+                result[question] = found[field]
+    return result
+
+
 def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Console | None = None) -> dict:
     """Ask the ten profile groups, store each reply in the answer bank, write profile.json.
 
@@ -160,6 +181,7 @@ def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Co
     out.print(Panel("[bold]Step 2: Profile[/bold]\nTell HireEmber about yourself. "
                     "This powers scoring, tailoring, and auto-fill. "
                     "Never enter passwords, tokens or payment details."))
+    proposals = _resume_proposals()
     total = len(PROFILE_GROUPS)
     for number, group in enumerate(PROFILE_GROUPS, 1):
         out.print(f"\n[bold cyan]Profile step {number} of {total}: {group.title}[/bold cyan]",
@@ -171,7 +193,11 @@ def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Co
             out.print("[dim]Optional. Type skip or decline to leave a question unanswered.[/dim]")
         for question in group.questions:
             while True:
-                reply = str(ask(question)).strip()
+                default = proposals.get(question)
+                if default is not None and stored_answer(conn, question) is None:
+                    reply = str(ask(question, default=default)).strip()
+                else:
+                    reply = str(ask(question)).strip()
                 if reply:
                     break
                 if group.optional:

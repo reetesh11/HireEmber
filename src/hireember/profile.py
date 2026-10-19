@@ -138,6 +138,11 @@ def _stored(conn: sqlite3.Connection) -> dict[str, str]:
     return {r[0]: r[1] for r in rows}
 
 
+def stored_answer(conn: sqlite3.Connection, question: str) -> str | None:
+    """The stored profile answer for one question, or None."""
+    return _stored(conn).get(normalize_text(question))
+
+
 def group_answers(conn: sqlite3.Connection, group_key: str) -> list[dict]:
     """Stored profile answers whose key matches one of the group's questions."""
     group = next(g for g in PROFILE_GROUPS if g.key == group_key)
