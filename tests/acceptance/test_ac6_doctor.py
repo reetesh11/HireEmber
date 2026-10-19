@@ -23,7 +23,6 @@ CHECK_ORDER = [
     "Node.js",
     "Database",
     "Job sources",
-    "CapSolver API key",
 ]
 
 

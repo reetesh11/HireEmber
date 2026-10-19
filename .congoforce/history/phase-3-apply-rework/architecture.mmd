@@ -1,0 +1,25 @@
+flowchart LR
+  cli[cli.py apply / queue / company / ticket]:::changed --> launcher[apply/launcher.py]:::changed
+  launcher --> runner[apply/runner.py apply_ticket]:::new
+  launcher --> chrome[apply/chrome.py]:::changed
+  launcher --> claude[Claude Code process]
+  runner --> session[apply/session.py GateSession]:::new
+  runner --> limits[apply/limits.py]:::new
+  runner --> tickets[tickets.py]:::changed
+  claude -->|MCP tools| gate[apply/gate_server.py]:::new
+  claude -->|MCP tools| pw[Playwright MCP]
+  pw --> chromeproc[Chrome dedicated profile]
+  gate --> session
+  session --> answers[answers.py]:::changed
+  session --> attempts[apply/attempts.py]:::new
+  session --> limits
+  session --> tickets
+  answers --> db[(SQLite)]:::changed
+  tickets --> db
+  attempts --> db
+  limits --> db
+  migration[migration.py]:::changed --> db
+  prompt[apply/prompt.py]:::changed --> claude
+  doctor[doctor.py + wizard/init.py]:::changed
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

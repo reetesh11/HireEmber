@@ -1,0 +1,94 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p3_ac1_gates.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "password field, CAPTCHA, unknown question and conflicting answers each block the ticket, leave the field empty and queue one item of the matching kind"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p3_ac2_bank_fill.py",
+      "tests": 5,
+      "expect_red": true,
+      "description": "after a queued answer, the next fixture form is filled from the bank, the attempt log names the bank entry, and ticket log shows it"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p3_ac3_duplicate.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "a duplicate ticket never calls the agent, Chrome or Claude"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p3_ac4_outcome_unknown.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "a run killed after submit is blocked as outcome unknown and never retried; stale applying tickets are recovered"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p3_ac5_injection.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "an injected instruction on a page changes no filled value and is logged"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p3_ac6_removal.py",
+      "tests": 6,
+      "expect_red": true,
+      "description": "no CapSolver anywhere, no signup/login/mail text in the prompt, no mail tool in the MCP config or tool list, gate server tools"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p3_ac7_confirmation.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "every applied ticket has a confirmation link or the unverified flag"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p3_ac8_profile_limits.py",
+      "tests": 8,
+      "expect_red": true,
+      "description": "default Chrome profile refused; 3-open, one-day same-company wait and 25-per-day limits hold in a batch"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p3_ac9_account_resume.py",
+      "tests": 6,
+      "expect_red": true,
+      "description": "sign-in page blocks with account needed; queue ready resumes the same session; live session link; queue ready/answer kind guards"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p3_ac10_closed_manual.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "closed role closes the ticket for good; manual-only company is blocked with no agent call; company commands"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p3_ac11_upload_review.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "tailored resume file name is uploaded; review-before-submit stops before submit and queues the ticket"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p3_unchanged.py",
+      "tests": 3,
+      "expect_red": false,
+      "description": "unchanged: a job with no ticket row is still acquirable, apply keeps its options, queue answer still works"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-6",
+      "reason": "the stdio transport of the gate server (JSON-RPC over a real pipe) and the real Claude tool list at runtime are not exercised; tests cover the MCP config, agent_tools(), TOOLS and call_tool. The verifier checks the transport by reading code."
+    }
+  ]
+}

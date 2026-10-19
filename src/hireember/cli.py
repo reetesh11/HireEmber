@@ -157,6 +157,7 @@ def apply(
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
+    review: bool = typer.Option(False, "--review", help="Stop before every submit so you can look at the form."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     from hireember.config import is_linkedin_url
@@ -191,6 +192,14 @@ def apply(
         return
 
     # --- Full apply mode ---
+
+    # Check 0: never touch the user's own Chrome profile
+    from hireember.apply.chrome import DefaultProfileError, check_worker_profiles
+    try:
+        check_worker_profiles(workers)
+    except DefaultProfileError as e:
+        console.print(str(e), markup=False, soft_wrap=True)
+        raise typer.Exit(code=1)
 
     # Check 1: Tier 3 required (Claude Code CLI + Chrome)
     check_tier(3, "auto-apply")
@@ -259,6 +268,7 @@ def apply(
         dry_run=dry_run,
         continuous=continuous,
         workers=workers,
+        review=True if review else None,
     )
 
 
@@ -329,8 +339,9 @@ def status() -> None:
     from hireember.database import get_connection
 
     blocked = get_connection().execute(
-        "SELECT t.id, j.title, t.status, t.status_reason FROM tickets t "
-        "LEFT JOIN jobs j ON j.url = t.job_url WHERE t.status = 'blocked for human' ORDER BY t.id"
+        "SELECT t.id, j.title, t.status, t.status_reason, t.not_before FROM tickets t "
+        "LEFT JOIN jobs j ON j.url = t.job_url WHERE t.status = 'blocked for human' "
+        "OR (t.status = 'pending' AND t.status_reason LIKE 'limit:%') ORDER BY t.id"
     ).fetchall()
     if blocked:
         attention = Table(title="\nTickets needing attention", show_header=True, header_style="bold red")
@@ -338,8 +349,11 @@ def status() -> None:
         attention.add_column("Job", overflow="fold")
         attention.add_column("Status")
         attention.add_column("Reason", overflow="fold")
-        for ticket_id, title, status_name, reason in blocked:
-            attention.add_row(str(ticket_id), title or "", status_name, reason or "")
+        for ticket_id, title, status_name, reason, not_before in blocked:
+            reason = reason or ""
+            if not_before and "until" not in reason:
+                reason += f" (until {not_before[:16].replace('T', ' ')})"
+            attention.add_row(str(ticket_id), title or "", status_name, reason)
         console.print(attention)
 
     console.print()
@@ -441,10 +455,11 @@ def queue_list() -> None:
         console.print("No open queue items.")
         return
     table = Table(title="Queue", show_header=True, header_style="bold cyan")
-    for column in ("Id", "Ticket", "Kind", "Question"):
-        table.add_column(column)
+    for column in ("Id", "Ticket", "Kind", "Company", "Page", "Question"):
+        table.add_column(column, overflow="fold")
     for i in items:
-        table.add_row(str(i["id"]), str(i["ticket_id"] or ""), i["kind"] or "", i["question_text"] or "")
+        table.add_row(str(i["id"]), str(i["ticket_id"] or ""), i["kind"] or "", i["company"] or "",
+                      i["page_link"] or "", i["question_text"] or "")
     console.print(table)
 
 
@@ -465,6 +480,106 @@ def queue_answer(
         console.print(str(e), markup=False)
         raise typer.Exit(1)
     console.print(result.message, markup=False)
+
+
+@queue_app.command("ready")
+def queue_ready(item_id: int = typer.Argument(..., help="Queue item id.")) -> None:
+    """Mark a handled item (sign-in, CAPTCHA, review...) ready and return its ticket to pending."""
+    _bootstrap()
+
+    from hireember.answers import QueueError, ready_queue_item
+    from hireember.database import get_connection
+
+    try:
+        result = ready_queue_item(get_connection(), item_id)
+    except QueueError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(result.message, markup=False)
+
+
+# ---------------------------------------------------------------------------
+# Companies
+# ---------------------------------------------------------------------------
+
+company_app = typer.Typer(help="Companies and the manual-only flag.", no_args_is_help=True)
+app.add_typer(company_app, name="company")
+
+
+@company_app.command("manual")
+def company_manual(
+    name: str = typer.Argument(..., help="Company name."),
+    off: bool = typer.Option(False, "--off", help="Remove the manual-only flag."),
+) -> None:
+    """Mark a company as manual-only: its tickets wait for you instead of the agent."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.tickets import CompanyNotFoundError, set_company_manual
+
+    try:
+        set_company_manual(get_connection(), name, not off)
+    except CompanyNotFoundError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    state = "no longer manual-only" if off else "now manual-only"
+    console.print(f'Company "{name}" is {state}.', markup=False)
+
+
+@company_app.command("list")
+def company_list() -> None:
+    """Show every company and whether it is manual-only."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.tickets import list_companies
+
+    rows = list_companies(get_connection())
+    if not rows:
+        console.print("No companies yet.")
+        return
+    table = Table(title="Companies", show_header=True, header_style="bold cyan")
+    for column in ("Id", "Name", "Manual-only"):
+        table.add_column(column)
+    for r in rows:
+        table.add_row(str(r["id"]), r["name"], "yes" if r["manual_only"] else "no")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Ticket details
+# ---------------------------------------------------------------------------
+
+ticket_app = typer.Typer(help="Ticket details.", no_args_is_help=True)
+app.add_typer(ticket_app, name="ticket")
+
+
+@ticket_app.command("log")
+def ticket_log(ticket_id: int = typer.Argument(..., help="Ticket id.")) -> None:
+    """Show what each apply attempt did on a ticket."""
+    _bootstrap()
+
+    from hireember.apply.attempts import get_log
+    from hireember.database import get_connection
+    from hireember.tickets import TicketNotFoundError, get_ticket
+
+    conn = get_connection()
+    try:
+        get_ticket(conn, ticket_id)
+    except TicketNotFoundError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    rows = get_log(conn, ticket_id)
+    if not rows:
+        console.print(f"No attempts logged for ticket {ticket_id}.")
+        return
+    table = Table(title=f"Ticket {ticket_id} log", show_header=True, header_style="bold cyan")
+    for column in ("Attempt", "Time", "Step", "Field", "Source", "Detail"):
+        table.add_column(column, overflow="fold")
+    for r in rows:
+        table.add_row(str(r["attempt"]), r["time"], r["kind"], r["field"] or "",
+                      r["source"] or "", r["detail"] or "")
+    console.print(table)
 
 
 # ---------------------------------------------------------------------------

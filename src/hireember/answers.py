@@ -15,6 +15,11 @@ KIND_SENSITIVE = "sensitive question"
 
 SOURCES = ("profile", "user", "import")
 
+READY_KINDS = (
+    "account needed", "captcha", "identity check", "video or biometric",
+    "review before submit", "manual site", "outcome unknown",
+)
+
 _SENSITIVE = re.compile(
     r"\b(password|passcode|token|api key|card number|credit card|debit card|cvv|cvc|"
     r"bank account|routing number|iban|ssn|social security|social insurance|passport|"
@@ -35,6 +40,7 @@ class AnswerResult:
     status: str  # "answered", "unknown", "conflict" or "sensitive"
     answer: str | None = None
     queue_item_id: int | None = None
+    answer_id: int | None = None
 
 
 @dataclass
@@ -110,9 +116,13 @@ def queue_question(conn: sqlite3.Connection, ticket_id: int, kind: str, question
 
 def list_queue(conn: sqlite3.Connection, include_resolved: bool = False) -> list[dict]:
     where = "" if include_resolved else "WHERE resolved_at IS NULL "
-    return _rows(conn, "SELECT id, ticket_id, kind, reason, question_text, resolved_at "
-                       f"FROM queue_items {where}"
-                       "ORDER BY (resolved_at IS NOT NULL), id")
+    return _rows(conn, "SELECT q.id, q.ticket_id, q.kind, q.reason, q.page_link, q.question_text, "
+                       "q.resolved_at, COALESCE(c.name, j.site, '') AS company "
+                       "FROM queue_items q LEFT JOIN tickets t ON t.id = q.ticket_id "
+                       "LEFT JOIN jobs j ON j.url = t.job_url "
+                       "LEFT JOIN companies c ON c.id = j.company_id "
+                       f"{where.replace('resolved_at', 'q.resolved_at')}"
+                       "ORDER BY (q.resolved_at IS NOT NULL), q.id")
 
 
 def _block(conn: sqlite3.Connection, ticket_id: int, kind: str, question: str, status: str) -> AnswerResult:
@@ -134,7 +144,7 @@ def match_answer(conn: sqlite3.Connection, ticket_id: int, question: str) -> Ans
     conn.execute("UPDATE answers SET times_used = COALESCE(times_used, 0) + 1, last_used_at = ? "
                  "WHERE id = ?", (tickets._now(), first["id"]))
     conn.commit()
-    return AnswerResult("answered", first["answer"], None)
+    return AnswerResult("answered", first["answer"], None, first["id"])
 
 
 def answer_queue_item(conn: sqlite3.Connection, item_id: int, answer: str) -> QueueAnswerResult:
@@ -147,6 +157,8 @@ def answer_queue_item(conn: sqlite3.Connection, item_id: int, answer: str) -> Qu
         raise QueueError(f"Queue item {item_id} not found or already resolved.")
     item = rows[0]
     ticket_id = item["ticket_id"]
+    if item["kind"] in READY_KINDS:
+        raise QueueError('Use "queue ready" for this item.')
     if item["kind"] == KIND_SENSITIVE:
         conn.execute("UPDATE queue_items SET resolved_at = ? WHERE id = ?", (tickets._now(), item_id))
         conn.commit()
@@ -160,3 +172,27 @@ def answer_queue_item(conn: sqlite3.Connection, item_id: int, answer: str) -> Qu
     if ticket_id is not None and tickets.get_ticket(conn, ticket_id)["status"] == "blocked for human":
         tickets.set_status(conn, ticket_id, "pending", actor="user", reason="answered queued question")
     return QueueAnswerResult(True, ticket_id, f"Answer saved. Ticket {ticket_id} is ready to resume.")
+
+
+def ready_queue_item(conn: sqlite3.Connection, item_id: int) -> QueueAnswerResult:
+    """Resolve a non-question item (account, captcha, review...) and return its ticket to pending."""
+    rows = _rows(conn, "SELECT id, ticket_id, kind, page_link FROM queue_items "
+                       "WHERE id = ? AND resolved_at IS NULL", (item_id,))
+    if not rows:
+        raise QueueError(f"Queue item {item_id} not found or already resolved.")
+    item = rows[0]
+    if item["kind"] not in READY_KINDS:
+        raise QueueError('Use "queue answer" for this item.')
+    ticket_id = item["ticket_id"]
+    conn.execute("UPDATE queue_items SET resolved_at = ? WHERE id = ?", (tickets._now(), item_id))
+    if ticket_id is not None:
+        conn.execute("UPDATE tickets SET resume_link = ?, not_before = NULL, "
+                     "submitted_at = CASE WHEN ? = 1 THEN NULL ELSE submitted_at END WHERE id = ?",
+                     (item["page_link"] or None, 1 if item["kind"] == "outcome unknown" else 0,
+                      ticket_id))
+    conn.commit()
+    if ticket_id is not None and item["kind"] == "review before submit":
+        tickets.set_setting(conn, f"skip_review_once:{ticket_id}", "1")
+    if ticket_id is not None and tickets.get_ticket(conn, ticket_id)["status"] == "blocked for human":
+        tickets.set_status(conn, ticket_id, "pending", actor="user", reason="ready")
+    return QueueAnswerResult(True, ticket_id, f"Ticket {ticket_id} is ready to resume.")

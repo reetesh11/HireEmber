@@ -10,22 +10,24 @@ import json
 import logging
 import os
 import platform
-import re
 import signal
 import subprocess
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rich.console import Console
 from rich.live import Live
 
-from hireember import config
+from hireember import config, tickets
 from hireember.database import get_connection
+from hireember.apply import chrome as chrome_mod
 from hireember.apply import prompt as prompt_mod
+from hireember.apply.runner import apply_ticket, recover_stale_tickets
+from hireember.apply.session import GateSession
 from hireember.apply.chrome import (
     launch_chrome, cleanup_worker, kill_all_chrome,
     reset_worker_dir, cleanup_on_exit, _kill_process_tree,
@@ -63,8 +65,11 @@ if platform.system() != "Windows":
 # MCP config
 # ---------------------------------------------------------------------------
 
-def _make_mcp_config(cdp_port: int) -> dict:
-    """Build MCP config dict for a specific CDP port."""
+def build_mcp_config(cdp_port: int, ticket_id: int, review: bool | None = None) -> dict:
+    """Build the MCP config for one run: the browser and the gate server for this ticket."""
+    gate_args = ["-m", "hireember.apply.gate_server", "--ticket", str(ticket_id)]
+    if review:
+        gate_args.append("--review")
     return {
         "mcpServers": {
             "playwright": {
@@ -75,17 +80,31 @@ def _make_mcp_config(cdp_port: int) -> dict:
                     f"--viewport-size={config.DEFAULTS['viewport']}",
                 ],
             },
-            "gmail": {
-                "command": "npx",
-                "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
+            "hireember": {
+                "command": sys.executable,
+                "args": gate_args,
             },
         }
     }
 
 
+def agent_tools() -> list[str]:
+    """Tools the apply agent may use: the browser and the gate. Nothing else."""
+    return ["mcp__playwright", "mcp__hireember"]
+
+
 # ---------------------------------------------------------------------------
 # Database operations
 # ---------------------------------------------------------------------------
+
+_JOB_COLUMNS = ("j.url, j.title, j.site, j.application_url, j.tailored_resume_path, "
+                "j.fit_score, j.location, j.full_description, j.cover_letter_path")
+_TICKET_JOIN = "FROM jobs j LEFT JOIN tickets t ON t.job_url = j.url"
+# A job with no ticket is still eligible. Ticket state decides for the rest.
+_TICKET_FILTER = ("AND (t.id IS NULL OR (t.status NOT IN "
+                  "('blocked for human', 'closed', 'applied', 'applying') "
+                  "AND (t.not_before IS NULL OR t.not_before <= ?)))")
+
 
 def acquire_job(target_url: str | None = None, min_score: int = 7,
                 worker_id: int = 0) -> dict | None:
@@ -100,20 +119,21 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
         Job dict or None if the queue is empty.
     """
     conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
     try:
         conn.execute("BEGIN IMMEDIATE")
 
         if target_url:
             like = f"%{target_url.split('?')[0].rstrip('/')}%"
-            row = conn.execute("""
-                SELECT url, title, site, application_url, tailored_resume_path,
-                       fit_score, location, full_description, cover_letter_path
-                FROM jobs
-                WHERE (url = ? OR application_url = ? OR application_url LIKE ? OR url LIKE ?)
-                  AND tailored_resume_path IS NOT NULL
-                  AND apply_status != 'in_progress'
+            row = conn.execute(f"""
+                SELECT {_JOB_COLUMNS}
+                {_TICKET_JOIN}
+                WHERE (j.url = ? OR j.application_url = ? OR j.application_url LIKE ? OR j.url LIKE ?)
+                  AND j.tailored_resume_path IS NOT NULL
+                  AND j.apply_status != 'in_progress'
+                  {_TICKET_FILTER}
                 LIMIT 1
-            """, (target_url, target_url, like, like)).fetchone()
+            """, (target_url, target_url, like, like, now)).fetchone()
         else:
             blocked_sites, blocked_patterns = _load_blocked()
             # Build parameterized filters to avoid SQL injection
@@ -121,25 +141,25 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             site_clause = ""
             if blocked_sites:
                 placeholders = ",".join("?" * len(blocked_sites))
-                site_clause = f"AND site NOT IN ({placeholders})"
+                site_clause = f"AND j.site NOT IN ({placeholders})"
                 params.extend(blocked_sites)
             url_clauses = ""
             if blocked_patterns:
-                url_clauses = " ".join("AND url NOT LIKE ?" for _ in blocked_patterns)
+                url_clauses = " ".join("AND j.url NOT LIKE ?" for _ in blocked_patterns)
                 params.extend(blocked_patterns)
             row = conn.execute(f"""
-                SELECT url, title, site, application_url, tailored_resume_path,
-                       fit_score, location, full_description, cover_letter_path
-                FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
-                  AND (apply_status IS NULL OR apply_status = 'failed')
-                  AND (apply_attempts IS NULL OR apply_attempts < ?)
-                  AND fit_score >= ?
+                SELECT {_JOB_COLUMNS}
+                {_TICKET_JOIN}
+                WHERE j.tailored_resume_path IS NOT NULL
+                  AND (j.apply_status IS NULL OR j.apply_status = 'failed')
+                  AND (j.apply_attempts IS NULL OR j.apply_attempts < ?)
+                  AND j.fit_score >= ?
                   {site_clause}
                   {url_clauses}
-                ORDER BY fit_score DESC, url
+                  {_TICKET_FILTER}
+                ORDER BY j.fit_score DESC, j.url
                 LIMIT 1
-            """, [config.DEFAULTS["max_apply_attempts"]] + params).fetchone()
+            """, [config.DEFAULTS["max_apply_attempts"]] + params + [now]).fetchone()
 
         if not row:
             conn.rollback()
@@ -157,7 +177,6 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             logger.info("Skipping manual ATS: %s", row["url"][:80])
             return None
 
-        now = datetime.now(timezone.utc).isoformat()
         conn.execute("""
             UPDATE jobs SET apply_status = 'in_progress',
                            agent_id = ?,
@@ -247,7 +266,8 @@ def gen_prompt(target_url: str, min_score: int = 7,
     # Write MCP config for reference
     port = BASE_CDP_PORT + worker_id
     mcp_path = config.APP_DIR / f".mcp-apply-{worker_id}.json"
-    mcp_path.write_text(json.dumps(_make_mcp_config(port)), encoding="utf-8")
+    ticket_id = tickets.open_ticket(get_connection(), job["url"])
+    mcp_path.write_text(json.dumps(build_mcp_config(port, ticket_id)), encoding="utf-8")
 
     return prompt_file
 
@@ -300,14 +320,21 @@ def reset_failed() -> int:
 # ---------------------------------------------------------------------------
 
 def run_job(job: dict, port: int, worker_id: int = 0,
-            model: str = "sonnet", dry_run: bool = False) -> tuple[str, int]:
+            model: str = "sonnet", dry_run: bool = False,
+            session: GateSession | None = None) -> tuple[str, int]:
     """Spawn a Claude Code session for one job application.
+
+    The agent decides nothing on its own: it works through the gate server for the
+    ticket, and the outcome is read back from the ticket after the process ends.
 
     Returns:
         Tuple of (status_string, duration_ms). Status is one of:
-        'applied', 'expired', 'captcha', 'login_issue',
-        'failed:reason', or 'skipped'.
+        'applied', 'expired', 'blocked', 'failed:reason', or 'skipped'.
     """
+    if session is None:
+        conn = get_connection()
+        session = GateSession(conn, tickets.open_ticket(conn, job["url"]))
+
     # Read tailored resume text
     resume_path = job.get("tailored_resume_path")
     txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
@@ -324,7 +351,8 @@ def run_job(job: dict, port: int, worker_id: int = 0,
 
     # Write per-worker MCP config
     mcp_config_path = config.APP_DIR / f".mcp-apply-{worker_id}.json"
-    mcp_config_path.write_text(json.dumps(_make_mcp_config(port)), encoding="utf-8")
+    mcp_config_path.write_text(
+        json.dumps(build_mcp_config(port, session.ticket_id, session.review)), encoding="utf-8")
 
     # Build claude command
     cmd = [
@@ -332,18 +360,10 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         "--model", model,
         "-p",
         "--mcp-config", str(mcp_config_path),
+        "--strict-mcp-config",
+        "--allowedTools", ",".join(agent_tools()),
         "--permission-mode", "bypassPermissions",
         "--no-session-persistence",
-        "--disallowedTools", (
-            "mcp__gmail__draft_email,mcp__gmail__modify_email,"
-            "mcp__gmail__delete_email,mcp__gmail__download_attachment,"
-            "mcp__gmail__batch_modify_emails,mcp__gmail__batch_delete_emails,"
-            "mcp__gmail__create_label,mcp__gmail__update_label,"
-            "mcp__gmail__delete_label,mcp__gmail__get_or_create_label,"
-            "mcp__gmail__list_email_labels,mcp__gmail__create_filter,"
-            "mcp__gmail__list_filters,mcp__gmail__get_filter,"
-            "mcp__gmail__delete_filter"
-        ),
         "--output-format", "stream-json",
         "--verbose", "-",
     ]
@@ -412,7 +432,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                                 name = (
                                     block.get("name", "")
                                     .replace("mcp__playwright__", "")
-                                    .replace("mcp__gmail__", "gmail:")
+                                    .replace("mcp__hireember__", "gate:")
                                 )
                                 inp = block.get("input", {})
                                 if "url" in inp:
@@ -467,40 +487,17 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             prev_cost = ws.total_cost if ws else 0.0
             update_state(worker_id, total_cost=prev_cost + cost)
 
-        def _clean_reason(s: str) -> str:
-            return re.sub(r'[*`"]+$', '', s).strip()
-
-        for result_status in ["APPLIED", "EXPIRED", "CAPTCHA", "LOGIN_ISSUE"]:
-            if f"RESULT:{result_status}" in output:
-                add_event(f"[W{worker_id}] {result_status} ({elapsed}s): {job['title'][:30]}")
-                update_state(worker_id, status=result_status.lower(),
-                             last_action=f"{result_status} ({elapsed}s)")
-                return result_status.lower(), duration_ms
-
-        if "RESULT:FAILED" in output:
-            for out_line in output.split("\n"):
-                if "RESULT:FAILED" in out_line:
-                    reason = (
-                        out_line.split("RESULT:FAILED:")[-1].strip()
-                        if ":" in out_line[out_line.index("FAILED") + 6:]
-                        else "unknown"
-                    )
-                    reason = _clean_reason(reason)
-                    PROMOTE_TO_STATUS = {"captcha", "expired", "login_issue"}
-                    if reason in PROMOTE_TO_STATUS:
-                        add_event(f"[W{worker_id}] {reason.upper()} ({elapsed}s): {job['title'][:30]}")
-                        update_state(worker_id, status=reason,
-                                     last_action=f"{reason.upper()} ({elapsed}s)")
-                        return reason, duration_ms
-                    add_event(f"[W{worker_id}] FAILED ({elapsed}s): {reason[:30]}")
-                    update_state(worker_id, status="failed",
-                                 last_action=f"FAILED: {reason[:25]}")
-                    return f"failed:{reason}", duration_ms
-            return "failed:unknown", duration_ms
+        state = session.refresh_state()
+        label = {"submitted": "applied", "closed": "expired", "blocked": "blocked",
+                 "submit_pressed": "blocked"}.get(state)
+        if label:
+            add_event(f"[W{worker_id}] {label.upper()} ({elapsed}s): {job['title'][:30]}")
+            update_state(worker_id, status=label, last_action=f"{label.upper()} ({elapsed}s)")
+            return label, duration_ms
 
         add_event(f"[W{worker_id}] NO RESULT ({elapsed}s)")
         update_state(worker_id, status="failed", last_action=f"no result ({elapsed}s)")
-        return "failed:no_result_line", duration_ms
+        return "failed:no_result", duration_ms
 
     except subprocess.TimeoutExpired:
         duration_ms = int((time.time() - start) * 1000)
@@ -550,10 +547,23 @@ def _is_permanent_failure(result: str) -> bool:
 # Worker loop
 # ---------------------------------------------------------------------------
 
+# A ticket held by a limit with no time of its own is looked at again after this long,
+# so a worker does not pick the same ticket in a tight loop.
+HELD_RETRY_MINUTES = 10
+
+
+def _retry_later(conn, ticket_id: int) -> None:
+    ticket = tickets.get_ticket(conn, ticket_id)
+    if ticket.get("not_before"):
+        return
+    later = (datetime.now(timezone.utc) + timedelta(minutes=HELD_RETRY_MINUTES)).isoformat()
+    tickets.set_reason(conn, ticket_id, ticket["status_reason"] or "", not_before=later)
+
 def worker_loop(worker_id: int = 0, limit: int = 1,
                 target_url: str | None = None,
                 min_score: int = 7, headless: bool = False,
-                model: str = "sonnet", dry_run: bool = False) -> tuple[int, int]:
+                model: str = "sonnet", dry_run: bool = False,
+                review: bool | None = None) -> tuple[int, int]:
     """Run jobs sequentially until limit is reached or queue is empty.
 
     Args:
@@ -564,6 +574,7 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
         headless: Run Chrome headless.
         model: Claude model name.
         dry_run: Don't click Submit.
+        review: Stop before every submit (None = use the review_before_submit setting).
 
     Returns:
         Tuple of (applied_count, failed_count).
@@ -611,31 +622,60 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
                 break
             continue
 
-        chrome_proc = None
+        conn = get_connection()
         try:
-            add_event(f"[W{worker_id}] Launching Chrome...")
-            chrome_proc = launch_chrome(worker_id, port=port, headless=headless)
+            ticket_id = tickets.ensure_ticket(conn, job["url"])
+        except tickets.TicketError:
+            ticket_id = tickets.open_ticket(conn, job["url"])
+        run: dict = {}
 
-            result, duration_ms = run_job(job, port=port, worker_id=worker_id,
-                                            model=model, dry_run=dry_run)
+        def agent(session: GateSession) -> None:
+            """Open the browser, let Claude work through the gate, then close the browser."""
+            chrome_proc = None
+            try:
+                add_event(f"[W{worker_id}] Launching Chrome...")
+                chrome_proc = launch_chrome(worker_id, port=port, headless=headless)
+                run["result"], run["duration_ms"] = run_job(
+                    job, port=port, worker_id=worker_id, model=model, dry_run=dry_run,
+                    session=session)
+            except Exception as e:
+                run["error"] = str(e)[:100]
+                raise
+            finally:
+                if chrome_proc:
+                    cleanup_worker(worker_id, chrome_proc)
 
-            if result == "skipped":
-                release_lock(job["url"])
+        try:
+            outcome = apply_ticket(conn, ticket_id, agent, review_before_submit=review,
+                                   session_link=f"http://127.0.0.1:{port}")
+            url = job["url"]
+            if outcome.result == "applied":
+                mark_result(url, "applied", duration_ms=run.get("duration_ms"))
+                applied += 1
+                update_state(worker_id, jobs_applied=applied, jobs_done=applied + failed)
+            elif outcome.result == "closed":
+                mark_result(url, "expired", outcome.reason, permanent=True,
+                            duration_ms=run.get("duration_ms"))
+            elif outcome.result in ("blocked", "duplicate", "skipped"):
+                release_lock(url)
+                add_event(f"[W{worker_id}] {outcome.result.title()}: {job['title'][:30]} ({outcome.reason})")
+                continue
+            elif outcome.result == "held":
+                _retry_later(conn, ticket_id)
+                release_lock(url)
+                add_event(f"[W{worker_id}] Held: {job['title'][:30]} ({outcome.reason})")
+                continue
+            elif dry_run or run.get("result") == "skipped":
+                release_lock(url)
                 add_event(f"[W{worker_id}] Skipped: {job['title'][:30]}")
                 continue
-            elif result == "applied":
-                mark_result(job["url"], "applied", duration_ms=duration_ms)
-                applied += 1
-                update_state(worker_id, jobs_applied=applied,
-                             jobs_done=applied + failed)
             else:
+                result = run.get("result") or f"failed:{run.get('error', 'no_result')}"
                 reason = result.split(":", 1)[-1] if ":" in result else result
-                mark_result(job["url"], "failed", reason,
-                            permanent=_is_permanent_failure(result),
-                            duration_ms=duration_ms)
+                mark_result(url, "failed", reason, permanent=_is_permanent_failure(result),
+                            duration_ms=run.get("duration_ms"))
                 failed += 1
-                update_state(worker_id, jobs_failed=failed,
-                             jobs_done=applied + failed)
+                update_state(worker_id, jobs_failed=failed, jobs_done=applied + failed)
 
         except KeyboardInterrupt:
             release_lock(job["url"])
@@ -649,9 +689,6 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
             release_lock(job["url"])
             failed += 1
             update_state(worker_id, jobs_failed=failed)
-        finally:
-            if chrome_proc:
-                cleanup_worker(worker_id, chrome_proc)
 
         jobs_done += 1
         if target_url:
@@ -668,7 +705,7 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 def main(limit: int = 1, target_url: str | None = None,
          min_score: int = 7, headless: bool = False, model: str = "sonnet",
          dry_run: bool = False, continuous: bool = False,
-         poll_interval: int = 60, workers: int = 1) -> None:
+         poll_interval: int = 60, workers: int = 1, review: bool | None = None) -> None:
     """Launch the apply pipeline.
 
     Args:
@@ -681,12 +718,17 @@ def main(limit: int = 1, target_url: str | None = None,
         continuous: Run forever, polling for new jobs.
         poll_interval: Seconds between DB polls when queue is empty.
         workers: Number of parallel workers (default 1).
+        review: Stop before every submit (None = use the review_before_submit setting).
 
     Raises:
         LinkedInBlockedError: target_url is a LinkedIn URL.
+        DefaultProfileError: a worker would use the user's own Chrome profile.
     """
     if config.is_linkedin_url(target_url):
         raise config.LinkedInBlockedError(target_url)
+
+    chrome_mod.check_worker_profiles(workers)
+    recover_stale_tickets(get_connection())
 
     global POLL_INTERVAL
     POLL_INTERVAL = poll_interval
@@ -758,6 +800,7 @@ def main(limit: int = 1, target_url: str | None = None,
                     headless=headless,
                     model=model,
                     dry_run=dry_run,
+                    review=review,
                 )
             else:
                 # Multi-worker — distribute limit across workers
@@ -781,6 +824,7 @@ def main(limit: int = 1, target_url: str | None = None,
                             headless=headless,
                             model=model,
                             dry_run=dry_run,
+                            review=review,
                         ): i
                         for i in range(workers)
                     }
