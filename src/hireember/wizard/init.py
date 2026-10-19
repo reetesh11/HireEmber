@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -308,6 +309,44 @@ def _setup_ai_features() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Playwright Chromium
+# ---------------------------------------------------------------------------
+
+CHROMIUM_COMMAND = ["playwright", "install", "chromium"]
+
+
+def offer_chromium_install(ask: Callable[..., str] | None = None, *, console: Console | None = None,
+                           runner: Callable[..., object] | None = None) -> bool:
+    """Offer to install Playwright Chromium when it is missing. Returns True when the install succeeded."""
+    from hireember import doctor
+
+    if doctor.chromium_path() is not None:
+        return False
+    out = console or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(escape(question), console=out, **kwargs)
+    if runner is None:
+        runner = subprocess.run
+
+    manual = " ".join(CHROMIUM_COMMAND)
+    answer = str(ask("Playwright Chromium is not installed. Run 'playwright install chromium' now? [Y/n]")).strip()
+    if answer.lower() in ("n", "no"):
+        out.print(f"Skipped. Install it later with: {manual}", highlight=False)
+        return False
+    try:
+        code = runner(CHROMIUM_COMMAND).returncode
+    except OSError as e:
+        out.print(f"Could not run the installer ({escape(str(e))}). Run it yourself: {manual}", highlight=False)
+        return False
+    if code == 0:
+        out.print("Installed.")
+        return True
+    out.print(f"The install did not finish (exit code {code}). Run it yourself: {manual}", highlight=False)
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Auto-Apply
 # ---------------------------------------------------------------------------
 
@@ -370,6 +409,8 @@ def run_wizard() -> None:
 
     # Step 4: AI features (optional LLM)
     _setup_ai_features()
+    console.print()
+    offer_chromium_install()
     console.print()
 
     # Step 5: Auto-apply (Claude Code detection)

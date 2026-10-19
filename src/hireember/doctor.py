@@ -211,6 +211,26 @@ def _check_jobspy() -> Check:
     return Check("python-jobspy", "OK", "Job board scraping available")
 
 
+def chromium_path() -> str | None:
+    """Path of the Playwright Chromium executable if it is installed, else None."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            path = p.chromium.executable_path
+    except Exception:  # driver missing, or called inside a running event loop
+        return None
+    return path if path and Path(path).exists() else None
+
+
+def check_playwright_chromium() -> Check:
+    """Playwright's own Chromium is needed for career-site discovery and enrichment."""
+    path = chromium_path()
+    if path:
+        return Check("Playwright Chromium", "OK", path)
+    return Check("Playwright Chromium", "MISSING", "Run: playwright install chromium")
+
+
 def _check_llm() -> Check:
     if os.environ.get("GEMINI_API_KEY"):
         return Check("LLM API key", "OK", f"Gemini ({os.environ.get('LLM_MODEL', 'gemini-2.0-flash')})")
@@ -229,6 +249,7 @@ def run_checks() -> list[Check]:
         _check_resume(),
         _check_search_config(),
         _check_jobspy(),
+        check_playwright_chromium(),
         _check_llm(),
         check_claude(),
         check_chrome(),
