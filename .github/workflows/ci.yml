@@ -31,3 +31,4 @@ jobs:
         run: python -m pytest tests/ -v
         env:
           PYTHONPATH: src
+          _TYPER_FORCE_DISABLE_TERMINAL: "1"
