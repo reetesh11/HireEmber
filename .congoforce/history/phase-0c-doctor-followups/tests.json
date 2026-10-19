@@ -1,0 +1,52 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_phase0c_doctor_followups.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "bad searches.yaml sites (int/str/dict/non-str items) give MISSING, no raise, no letters"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_phase0c_doctor_followups.py",
+      "tests": 3,
+      "expect_red": true,
+      "description": "employers.yaml / sites.yaml wrong types give MISSING naming the file"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_phase0c_doctor_followups.py",
+      "tests": 6,
+      "expect_red": true,
+      "description": "resolve_jobspy_sites ValueError; discovery callers return error"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_phase0c_doctor_followups.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "stray .hireember file ignored; legacy notice printed"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_phase0c_doctor_followups.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "README badge and CONTRIBUTING commands"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_phase0c_doctor_unchanged.py",
+      "tests": 3,
+      "expect_red": false,
+      "description": "unchanged behaviour"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-1",
+      "reason": "full pytest and ruff run is the suite gate itself"
+    }
+  ]
+}

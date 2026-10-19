@@ -10,7 +10,7 @@ HireEmber/OpenApply is a fork of [ApplyPilot](https://github.com/Pickle-Pixel/Ap
 
 **Applied to 1,000 jobs in 2 days. Fully autonomous. Open source.**
 
-[![PyPI version](https://img.shields.io/pypi/v/applypilot?color=blue)](https://pypi.org/project/applypilot/)
+[![PyPI version](https://img.shields.io/pypi/v/hireember?color=blue)](https://pypi.org/project/hireember/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Pickle-Pixel/ApplyPilot?style=social)](https://github.com/Pickle-Pixel/ApplyPilot)

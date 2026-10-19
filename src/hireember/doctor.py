@@ -142,19 +142,35 @@ def check_sources(search_cfg: dict | None = None) -> Check:
         return Check(
             "Job sources", "MISSING", f"searches.yaml: top level must be a mapping, got {type(search_cfg).__name__}"
         )
-    boards = config.resolve_jobspy_sites(search_cfg.get("sites"))
+    raw_sites = search_cfg.get("sites")
+    if raw_sites is not None and not (isinstance(raw_sites, list) and all(isinstance(x, str) for x in raw_sites)):
+        return Check(
+            "Job sources",
+            "MISSING",
+            f"searches.yaml: sites must be a list of strings, got {type(raw_sites).__name__}",
+        )
+    try:
+        boards = config.resolve_jobspy_sites(raw_sites)
+    except ValueError as e:
+        return Check("Job sources", "MISSING", f"searches.yaml: {e}")
 
     path = config.CONFIG_DIR / "employers.yaml"
     try:
         employers = _load_yaml_mapping(path).get("employers") or {}
     except (yaml.YAMLError, OSError, ValueError) as e:
         return _bad_source(path, e)
+    if not isinstance(employers, dict):
+        return Check(
+            "Job sources", "MISSING", f"employers.yaml: employers must be a mapping, got {type(employers).__name__}"
+        )
 
     path = config.CONFIG_DIR / "sites.yaml"
     try:
         sites = _load_yaml_mapping(path).get("sites") or []
     except (yaml.YAMLError, OSError, ValueError) as e:
         return _bad_source(path, e)
+    if not isinstance(sites, list):
+        return Check("Job sources", "MISSING", f"sites.yaml: sites must be a list, got {type(sites).__name__}")
 
     note = (
         f"JobSpy: {', '.join(boards) if boards else 'none'} | "

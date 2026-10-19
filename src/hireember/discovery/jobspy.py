@@ -310,7 +310,11 @@ def search_jobs(
     country_indeed: str = "usa",
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
-    sites = config.resolve_jobspy_sites(sites)
+    try:
+        sites = config.resolve_jobspy_sites(sites)
+    except ValueError as e:
+        log.error("%s", e)
+        return {"error": str(e), "total": 0, "new": 0, "existing": 0}
     if not sites:
         log.error("No JobSpy sites configured")
         return {"error": "no JobSpy sites configured", "total": 0, "new": 0, "existing": 0}
@@ -377,7 +381,13 @@ def _full_crawl(
     max_retries: int = 2,
 ) -> dict:
     """Run all search queries from search config across all locations."""
-    sites = config.resolve_jobspy_sites(sites)
+    try:
+        sites = config.resolve_jobspy_sites(sites)
+    except ValueError as e:
+        log.error("%s", e)
+        conn = init_db()
+        db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0, "error": str(e)}
     if not sites:
         log.error("No JobSpy sites configured; skipping JobSpy crawl")
         conn = init_db()
