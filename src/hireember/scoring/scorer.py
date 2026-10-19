@@ -32,6 +32,7 @@ IMPORTANT FACTORS:
 - Consider transferable experience (automation, scripting, API work)
 - Factor in the candidate's project experience
 - Be realistic about experience level vs. job requirements (years of experience, seniority)
+- A job whose location is incompatible with the candidate's target locations is a reason for a low score.
 
 RESPOND IN EXACTLY THIS FORMAT (no other text):
 SCORE: [1-10]
@@ -127,7 +128,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         rescore: If True, re-score all jobs (not just unscored ones).
 
     Returns:
-        {"scored": int, "errors": int, "elapsed": float, "distribution": list}
+        {"scored": int, "errors": int, "location_skipped": int, "elapsed": float, "distribution": list}
     """
     from hireember.gating import score_job_for_ticket
 
@@ -147,23 +148,27 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
 
     if not jobs:
         log.info("No unscored jobs with descriptions found.")
-        return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
+        return {"scored": 0, "errors": 0, "location_skipped": 0, "elapsed": 0.0, "distribution": []}
 
     log.info("Scoring %d jobs sequentially...", len(jobs))
     t0 = time.time()
     scored = 0
     errors = 0
+    location_skipped = 0
 
     for number, job in enumerate(jobs, 1):
         result = score_job_for_ticket(conn, job["url"], profile=profile)
-        if result.score is None:
+        if result.score is None and (result.reason or "").startswith("location:"):
+            location_skipped += 1
+        elif result.score is None:
             errors += 1
         else:
             scored += 1
         log.info("[%d/%d] %s  %s", number, len(jobs), result.status, str(job["title"])[:60])
 
     elapsed = time.time() - t0
-    log.info("Done: %d scored, %d blocked in %.1fs", scored, errors, elapsed)
+    log.info("Done: %d scored, %d skipped by location, %d blocked in %.1fs",
+             scored, location_skipped, errors, elapsed)
 
     # Score distribution
     dist = conn.execute("""
@@ -176,6 +181,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     return {
         "scored": scored,
         "errors": errors,
+        "location_skipped": location_skipped,
         "elapsed": elapsed,
         "distribution": distribution,
     }

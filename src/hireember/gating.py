@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from hireember import tickets
 from hireember.config import COVER_LETTER_DIR, TAILORED_DIR, load_profile
+from hireember.location import location_skip_reason
 from hireember.resumes import ResumeError, choose_resume, get_resume_text
 from hireember.scoring import cover_letter, scorer, tailor
 from hireember.scoring.pdf import convert_to_pdf
@@ -52,12 +53,21 @@ def _block(conn: sqlite3.Connection, url: str, reason: str, resume_id: int | Non
 
 
 def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | None = None) -> GateResult:
-    """Choose a base resume, score the job and create or update its ticket by the threshold."""
+    """Skip jobs outside the target locations; otherwise choose a base resume, score the job and
+    create or update its ticket by the threshold."""
     profile = _profile(profile)
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     if row is None:
         raise tickets.TicketError(f"Job {url} not found.")
     job = dict(zip(row.keys(), tuple(row)))
+
+    existing = tickets.get_ticket_by_url(conn, url)
+    if not (existing and existing["score"] is not None):
+        reason = location_skip_reason(job.get("location"), profile)
+        if reason:
+            ticket_id = tickets.open_ticket(conn, url, "skipped", reason)
+            tickets.set_status(conn, ticket_id, "skipped", reason=reason)
+            return _result(conn, ticket_id)
 
     resume_id = choose_resume(conn, job)
     if resume_id is None:
