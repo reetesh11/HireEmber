@@ -294,6 +294,7 @@ def status() -> None:
     summary.add_row("Enrichment errors", str(stats["detail_errors"]))
     summary.add_row("Scored by LLM", str(stats["scored"]))
     summary.add_row("Pending scoring", str(stats["unscored"]))
+    summary.add_row("Skipped by location", str(stats["location_skipped"]))
     summary.add_row("Tailored resumes", str(stats["tailored"]))
     summary.add_row("Pending tailoring (7+)", str(stats["untailored_eligible"]))
     summary.add_row("Cover letters", str(stats["with_cover_letter"]))
@@ -647,10 +648,12 @@ def ticket_log(ticket_id: int = typer.Argument(..., help="Ticket id.")) -> None:
 
     conn = get_connection()
     try:
-        get_ticket(conn, ticket_id)
+        ticket = get_ticket(conn, ticket_id)
     except TicketNotFoundError as e:
         console.print(str(e), markup=False)
         raise typer.Exit(1)
+    reason = f" ({ticket['status_reason']})" if ticket["status_reason"] else ""
+    console.print(f"Status: {ticket['status']}{reason}", markup=False, highlight=False)
     rows = get_log(conn, ticket_id)
     if not rows:
         console.print(f"No attempts logged for ticket {ticket_id}.")
