@@ -1,0 +1,94 @@
+{
+ "acceptance": [
+  {
+   "criterion": "AC-2",
+   "file": "tests/acceptance/test_p0d_extract.py",
+   "tests": 24,
+   "expect_red": true,
+   "description": "pypdf dependency, extract_pdf_text on a text PDF and on text-less/corrupt files, propose_profile rules (also AC-4, AC-6, AC-7 rules)"
+  },
+  {
+   "criterion": "AC-2",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 27,
+   "expect_red": true,
+   "description": "step 1: text PDF and .txt flows, no-text PDFs, confirmation output, decline loop, registration once, overwrite guard (AC-2, AC-3, AC-4, AC-5, AC-10, AC-11)"
+  },
+  {
+   "criterion": "AC-6",
+   "file": "tests/acceptance/test_p0d_profile.py",
+   "tests": 6,
+   "expect_red": true,
+   "description": "profile defaults from resume.txt stored to answer bank and profile.json; typing replaces; missing fields asked without default; partly stored group; doctor OK after PDF flow (AC-6, AC-7, AC-8, AC-9)"
+  },
+  {
+   "criterion": "AC-8",
+   "file": "tests/acceptance/test_p0d_profile_stable.py",
+   "tests": 5,
+   "expect_red": false,
+   "description": "no default when ambiguous/absent, blank re-ask, stored answers kept and never replaced (AC-7, AC-8): pass before and after"
+  },
+  {
+   "criterion": "AC-12",
+   "file": "tests/acceptance/test_p0d_unchanged.py",
+   "tests": 6,
+   "expect_red": false,
+   "description": "profile questions not answerable from the resume asked as before; doctor WARN/MISSING/OK states unchanged"
+  },
+  {
+   "criterion": "AC-3",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "txt copied, nothing else asked"
+  },
+  {
+   "criterion": "AC-4",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "no-text PDFs ask for .txt and finish"
+  },
+  {
+   "criterion": "AC-5",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "resume registered once, twice leaves one entry"
+  },
+  {
+   "criterion": "AC-7",
+   "file": "tests/acceptance/test_p0d_profile.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "missing fields asked without default"
+  },
+  {
+   "criterion": "AC-9",
+   "file": "tests/acceptance/test_p0d_profile.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "doctor resume OK after PDF flow"
+  },
+  {
+   "criterion": "AC-10",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "overwrite prompt before replacing user resume.txt"
+  },
+  {
+   "criterion": "AC-11",
+   "file": "tests/acceptance/test_p0d_step1.py",
+   "tests": 1,
+   "expect_red": true,
+   "description": "confirmation output lines, count, path"
+  }
+ ],
+ "untestable": [
+  {
+   "criterion": "AC-1",
+   "reason": "Meta criterion: the full pytest run and the existing ruff acceptance test (test_ac1_lint) enforce it; the verifier runs both."
+  }
+ ]
+}

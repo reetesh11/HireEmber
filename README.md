@@ -42,6 +42,8 @@ hireember apply -w 3     # parallel apply (3 Chrome instances)
 hireember apply --dry-run   # fill forms without submitting
 ```
 
+`hireember init` asks for one resume file (.txt or .pdf). A PDF is read locally into an editable `resume.txt` in the data folder, and the name, contact and location found in it are offered as defaults in the profile step.
+
 > **Why two install commands?** `python-jobspy` pins an exact numpy version in its metadata that conflicts with pip's resolver, but works fine at runtime with any modern numpy. The `--no-deps` flag bypasses the resolver; the second command installs jobspy's actual runtime dependencies. Everything except `python-jobspy` installs normally.
 
 ---
