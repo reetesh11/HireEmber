@@ -1,0 +1,13 @@
+flowchart LR
+  cli[cli.py init] --> wiz[wizard/init.py run_wizard]:::changed
+  wiz --> rs[run_resume_step]:::new
+  wiz --> ps[run_profile_step]:::changed
+  rs --> ext[resume_extract.py extract_pdf_text]:::new
+  rs --> reg[resumes.py add_resume / update_resume]
+  rs --> files[(resume.txt / resume.pdf / marker)]
+  ps --> prop[resume_extract.py propose_profile]:::new
+  prop --> files
+  ps --> bank[(answers bank + profile.json)]
+  doc[doctor.py _check_resume] --> files
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
