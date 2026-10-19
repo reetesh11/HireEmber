@@ -9,6 +9,7 @@ Interactive flow that creates ~/.hireember/ with:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from collections.abc import Callable
@@ -23,12 +24,11 @@ from hireember.config import (
     APP_DIR,
     ENV_PATH,
     PROFILE_PATH,
-    RESUME_PATH,
-    RESUME_PDF_PATH,
     SEARCH_CONFIG_PATH,
     ensure_dirs,
 )
-from hireember import answers
+from hireember import answers, config, resumes
+from hireember.resume_extract import MIN_TEXT_CHARS, extract_pdf_text
 from hireember.database import init_db
 from hireember.profile import PROFILE_GROUPS, build_profile, group_complete
 
@@ -39,43 +39,107 @@ console = Console()
 # Resume
 # ---------------------------------------------------------------------------
 
-def _setup_resume() -> None:
-    """Prompt for resume file and copy into APP_DIR."""
-    console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt or .pdf)."))
+MASTER_RESUME_NAME = "Master resume"
+_MARKER_NAME = ".resume_txt_sha256"
 
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _marker() -> Path:
+    return config.APP_DIR / _MARKER_NAME
+
+
+def _is_user_supplied_txt() -> bool:
+    """resume.txt counts as extracted only when the marker matches its current hash."""
+    try:
+        return _marker().read_text(encoding="utf-8").strip() != _sha256(config.RESUME_PATH)
+    except OSError:
+        return True
+
+
+def _clean_path(raw: str) -> Path:
+    return Path(str(raw).strip().strip('"').strip("'")).expanduser().resolve()
+
+
+def _ask_file(ask, out: Console, question: str, suffixes: tuple[str, ...], wrong: str) -> Path:
     while True:
-        path_str = Prompt.ask("Resume file path")
-        src = Path(path_str.strip().strip('"').strip("'")).expanduser().resolve()
+        src = _clean_path(ask(question))
+        if not src.is_file():
+            out.print(f"[red]File not found:[/red] {escape(str(src))}", highlight=False)
+        elif src.suffix.lower() not in suffixes:
+            out.print(wrong)
+        else:
+            return src
 
-        if not src.exists():
-            console.print(f"[red]File not found:[/red] {src}")
-            continue
 
-        suffix = src.suffix.lower()
-        if suffix not in (".txt", ".pdf"):
-            console.print("[red]Unsupported format.[/red] Provide a .txt or .pdf file.")
-            continue
+def _copy(src: Path, dest: Path) -> None:
+    if not (dest.exists() and src.samefile(dest)):
+        shutil.copy2(src, dest)
 
-        if suffix == ".txt":
-            shutil.copy2(src, RESUME_PATH)
-            console.print(f"[green]Copied to {RESUME_PATH}[/green]")
-        elif suffix == ".pdf":
-            shutil.copy2(src, RESUME_PDF_PATH)
-            console.print(f"[green]Copied to {RESUME_PDF_PATH}[/green]")
 
-            # Also ask for a plain-text version for LLM consumption
-            txt_path_str = Prompt.ask(
-                "Plain-text version of your resume (.txt)",
-                default="",
-            )
-            if txt_path_str.strip():
-                txt_src = Path(txt_path_str.strip().strip('"').strip("'")).expanduser().resolve()
-                if txt_src.exists():
-                    shutil.copy2(txt_src, RESUME_PATH)
-                    console.print(f"[green]Copied to {RESUME_PATH}[/green]")
-                else:
-                    console.print("[yellow]File not found, skipping plain-text copy.[/yellow]")
-        break
+def _register(conn, file: Path, text_file: Path | None) -> None:
+    existing = next((r for r in resumes.list_resumes(conn)
+                     if r["name"].strip().lower() == MASTER_RESUME_NAME.lower()), None)
+    if existing:
+        resumes.update_resume(conn, existing["id"], file, text_file=text_file)
+    else:
+        resumes.add_resume(conn, file, MASTER_RESUME_NAME, text_file=text_file)
+
+
+def run_resume_step(conn, ask: Callable[..., str] | None = None, *, console: Console | None = None) -> None:
+    """Step 1: one resume file (.txt or .pdf), local PDF text extraction, confirmation, registration."""
+    out = console or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(escape(question), console=out, **kwargs)
+
+    out.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt or .pdf)."))
+    while True:
+        src = _ask_file(ask, out, "Resume file path", (".txt", ".pdf"),
+                        "[red]Unsupported format.[/red] Provide a .txt or .pdf file.")
+        txt_source: Path | None = src
+        extracted: str | None = None
+        pdf_source: Path | None = None
+        if src.suffix.lower() == ".pdf":
+            text = extract_pdf_text(src)
+            if len(text) >= MIN_TEXT_CHARS:
+                txt_source, extracted, pdf_source = None, text, src
+            else:
+                out.print(f"Could not read any text from {escape(src.name)}. It may be a scanned image, "
+                          "password-protected, or damaged. Please give a plain-text (.txt) version of "
+                          "your resume instead.", highlight=False)
+                txt_source = _ask_file(ask, out, "Resume .txt file path", (".txt",),
+                                       "Please provide a .txt file.")
+
+        txt_path = config.RESUME_PATH
+        replace = True
+        if txt_path.exists() and _is_user_supplied_txt():
+            replace = str(ask("resume.txt already exists. Overwrite it? [y/N]")).strip().lower() in ("y", "yes")
+        if replace:
+            if extracted is not None:
+                txt_path.write_bytes(extracted.encode("utf-8", errors="replace"))
+                _marker().write_text(_sha256(txt_path), encoding="utf-8")
+            else:
+                _copy(txt_source, txt_path)
+                _marker().unlink(missing_ok=True)
+        if pdf_source is not None:
+            _copy(pdf_source, config.RESUME_PDF_PATH)
+
+        shown = txt_path.read_text(encoding="utf-8", errors="replace")
+        out.print("\nFirst lines of your resume:")
+        for line in [ln for ln in shown.splitlines() if ln.strip()][:10]:
+            out.print(escape(line[:100]), highlight=False)
+        out.print(f"Characters read: {len(shown)}", highlight=False)
+        out.print(f"Saved as {escape(str(txt_path))} (you can edit this file).", highlight=False)
+        if str(ask("Does this look right? [Y/n]")).strip().lower() not in ("n", "no"):
+            break
+
+    if pdf_source is not None:
+        _register(conn, config.RESUME_PDF_PATH, txt_path)
+    else:
+        _register(conn, txt_path, None)
 
 
 # ---------------------------------------------------------------------------
@@ -264,12 +328,14 @@ def run_wizard() -> None:
     ensure_dirs()
     console.print(f"[dim]Created {APP_DIR}[/dim]\n")
 
+    conn = init_db()
+
     # Step 1: Resume
-    _setup_resume()
+    run_resume_step(conn)
     console.print()
 
     # Step 2: Profile (ten groups, stored in the answer bank)
-    run_profile_step(init_db())
+    run_profile_step(conn)
     console.print()
 
     # Step 3: Search config
