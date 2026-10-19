@@ -1,4 +1,4 @@
-from p0d_helpers import Script, console, output
+from scripted import Script, console, output
 
 from hireember import config, models
 from hireember.wizard.init import run_ai_step

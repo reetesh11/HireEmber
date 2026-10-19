@@ -1,4 +1,4 @@
-from p0d_helpers import Script, console, output
+from scripted import Script, console, output
 
 from hireember import doctor
 from hireember.wizard.init import offer_chromium_install
