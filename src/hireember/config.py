@@ -26,7 +26,7 @@ LEGACY_DIR_NOTICE = (
 def resolve_app_dir(environ: Mapping[str, str] | None = None, home: Path | None = None) -> tuple[Path, bool]:
     """Pick the data folder; return ``(app_dir, is_legacy)``.
 
-    Order: ``$HIREEMBER_DIR``, then ``~/.hireember`` if it exists, then the
+    Order: ``$HIREEMBER_DIR``, then ``~/.hireember`` if it is a directory, then the
     legacy ``~/.applypilot`` folder if it exists, else ``~/.hireember``.
     Pure: creates, moves and prints nothing.
     """
@@ -38,7 +38,7 @@ def resolve_app_dir(environ: Mapping[str, str] | None = None, home: Path | None 
     if value:
         return Path(value).expanduser(), False
     current = home / APP_DIR_NAME
-    if current.exists():
+    if current.is_dir():
         return current, False
     legacy = home / LEGACY_APP_DIR_NAME
     if legacy.is_dir():
@@ -214,10 +214,13 @@ def resolve_jobspy_sites(sites: list[str] | None) -> list[str]:
     """Return the JobSpy boards to scrape, with LinkedIn always removed.
 
     None gives DEFAULT_JOBSPY_SITES. Any configured "linkedin" entry is
-    dropped with a warning. The result may be empty.
+    dropped with a warning. The result may be empty. Any other non-list
+    value raises ValueError.
     """
     if sites is None:
         return list(DEFAULT_JOBSPY_SITES)
+    if not isinstance(sites, list):
+        raise ValueError(f"JobSpy sites must be a list, got {type(sites).__name__}")
     kept = [s for s in sites if str(s).strip().lower() != "linkedin"]
     if len(kept) != len(sites):
         log.warning("LinkedIn is not supported as a job source; removed it from the JobSpy sites %s", list(sites))

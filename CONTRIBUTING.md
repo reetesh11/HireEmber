@@ -45,7 +45,7 @@ Workday employer portals are configured in `config/employers.yaml`. To add a new
   url: "https://company.wd5.myworkdaysite.com/en-US/recruiting"
 ```
 
-4. Test discovery: `hireember discover --employer "Company Name"`
+4. Test discovery: `hireember run discover` (runs the discovery stage over the configured sources, including your new employer)
 5. Submit a PR with the new entry
 
 ### Adding New Career Sites
@@ -66,7 +66,7 @@ Direct career site scrapers are configured in `config/sites.yaml`. To add a new 
     description: ".job-description"
 ```
 
-3. Test: `hireember discover --site "Company Name"`
+3. Test: `hireember run discover` (runs the discovery stage over the configured sources, including your new site)
 4. Submit a PR
 
 ### Bug Fixes and Features
