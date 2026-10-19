@@ -403,7 +403,7 @@ def doctor() -> None:
     console.print(f"[bold]Current tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]")
 
     if tier == 1:
-        console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs LLM API key)[/dim]")
+        console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs a configured model, see hireember models show)[/dim]")
         console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js 18+)[/dim]")
     elif tier == 2:
         console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js 18+)[/dim]")

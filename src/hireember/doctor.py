@@ -6,7 +6,6 @@ can call checks directly and the CLI only renders them.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sqlite3
@@ -231,14 +230,31 @@ def check_playwright_chromium() -> Check:
     return Check("Playwright Chromium", "MISSING", "Run: playwright install chromium")
 
 
-def _check_llm() -> Check:
-    if os.environ.get("GEMINI_API_KEY"):
-        return Check("LLM API key", "OK", f"Gemini ({os.environ.get('LLM_MODEL', 'gemini-2.0-flash')})")
-    if os.environ.get("OPENAI_API_KEY"):
-        return Check("LLM API key", "OK", f"OpenAI ({os.environ.get('LLM_MODEL', 'gpt-4o-mini')})")
-    if os.environ.get("LLM_URL"):
-        return Check("LLM API key", "OK", f"Local: {os.environ.get('LLM_URL')}")
-    return Check("LLM API key", "MISSING", f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'hireember init')")
+def check_llm_tiers() -> list[Check]:
+    """One check per model tier: configured, and its endpoint answers."""
+    from hireember import models
+
+    checks: list[Check] = []
+    for tier in models.TIERS:
+        name = f"LLM {tier}"
+        try:
+            settings = models.resolve_tier(tier)
+        except models.TierNotConfigured as e:
+            note = str(e)
+            if "is not configured" in note:
+                note = f"not configured — run 'hireember models set {tier}' or 'hireember init'"
+            checks.append(Check(name, "MISSING", note))
+            continue
+        except models.ModelsError as e:
+            checks.append(Check(name, "MISSING", str(e)))
+            continue
+        result = models.probe_tier(tier)
+        label = f"{settings.provider} / {settings.model}"
+        if result.ok:
+            checks.append(Check(name, "OK", f"{label}, reachable"))
+        else:
+            checks.append(Check(name, "WARN", f"{label}, not reachable: {result.message}"))
+    return checks
 
 
 def run_checks() -> list[Check]:
@@ -250,7 +266,7 @@ def run_checks() -> list[Check]:
         _check_search_config(),
         _check_jobspy(),
         check_playwright_chromium(),
-        _check_llm(),
+        *check_llm_tiers(),
         check_claude(),
         check_chrome(),
         check_node(),

@@ -525,6 +525,11 @@ def run_pipeline(
     summary.add_row("[bold]Total[/bold]", "", f"[bold]{result['elapsed']:.1f}s[/bold]")
     console.print(summary)
 
+    from hireember.models import stage_model_lines
+
+    for line in stage_model_lines([r["stage"] for r in result["stages"]]):
+        console.print(f"  {line}", markup=False, highlight=False)
+
     # Final DB stats
     final = get_stats()
     console.print("\n  [bold]DB Final State:[/bold]")

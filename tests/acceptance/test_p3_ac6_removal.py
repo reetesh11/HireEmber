@@ -46,7 +46,7 @@ def test_doctor_has_no_capsolver_check(env):
 
     names = [c.name for c in run_checks()]
     assert not any("capsolver" in n.lower() for n in names)
-    assert len(names) == 11
+    assert len(names) == 13
 
 
 def test_prompt_has_no_signup_login_or_mail_instructions(env, tmp_path, monkeypatch):
