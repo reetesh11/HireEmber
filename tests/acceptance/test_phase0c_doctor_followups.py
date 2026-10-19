@@ -149,7 +149,7 @@ def test_ac6_readme_badge_points_at_hireember():
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "https://pypi.org/project/hireember/" in text
     assert "img.shields.io/pypi/v/hireember" in text
-    assert "applypilot" not in "\n".join(l for l in text.splitlines() if "pypi" in l)
+    assert "applypilot" not in "\n".join(line for line in text.splitlines() if "pypi" in line)
 
 
 def test_ac6_contributing_commands_exist():

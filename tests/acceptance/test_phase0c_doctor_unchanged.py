@@ -1,11 +1,9 @@
 """Phase 0c: behaviour that must not change."""
 
-import re
 import shutil
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
