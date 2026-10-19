@@ -207,7 +207,7 @@ def _check_jobspy() -> Check:
         import jobspy  # noqa: F401
     except ImportError:
         return Check("python-jobspy", "WARN",
-                     "pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex")
+                     f"Not importable. Reinstall hireember in the active Python: {sys.executable} -m pip install -e .")
     return Check("python-jobspy", "OK", "Job board scraping available")
 
 
