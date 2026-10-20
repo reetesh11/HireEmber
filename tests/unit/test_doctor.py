@@ -6,7 +6,8 @@ from hireember import doctor
 from hireember.database import close_connection, init_db
 
 ORDER = [
-    "Python", "profile.json", "resume.txt", "searches.yaml", "python-jobspy", "LLM API key",
+    "Python", "profile.json", "resume.txt", "searches.yaml", "python-jobspy", "Playwright Chromium",
+    "LLM fast", "LLM quality",
     "Claude Code CLI", "Chrome/Chromium", "Node.js", "Database", "Job sources",
 ]
 

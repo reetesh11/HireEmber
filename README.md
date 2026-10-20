@@ -32,7 +32,6 @@ Three commands. That's it.
 
 ```bash
 pip install hireember
-pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex
 hireember init           # one-time setup: resume, profile, preferences, API keys
 hireember doctor         # verify your setup — shows what's installed and what's missing
 hireember run            # discover > enrich > score > tailor > cover letters
@@ -44,7 +43,7 @@ hireember apply --dry-run   # fill forms without submitting
 
 `hireember init` asks for one resume file (.txt or .pdf). A PDF is read locally into an editable `resume.txt` in the data folder, and the name, contact and location found in it are offered as defaults in the profile step.
 
-> **Why two install commands?** `python-jobspy` pins an exact numpy version in its metadata that conflicts with pip's resolver, but works fine at runtime with any modern numpy. The `--no-deps` flag bypasses the resolver; the second command installs jobspy's actual runtime dependencies. Everything except `python-jobspy` installs normally.
+> `pip install hireember` is enough: job board scraping (`python-jobspy`) installs with it. Run `hireember doctor` afterwards to check the rest.
 
 ---
 
@@ -101,8 +100,6 @@ Each stage is independent. Run them all or pick what you need.
 | Claude Code CLI | Auto-apply | Install from [claude.ai/code](https://claude.ai/code) |
 
 **Gemini API key is free.** Get one at [aistudio.google.com](https://aistudio.google.com). OpenAI and local models (Ollama/llama.cpp) are also supported.
-
-> **Note:** python-jobspy is installed separately with `--no-deps` because it pins an exact numpy version in its metadata that conflicts with pip's resolver. It works fine with modern numpy at runtime.
 
 ---
 

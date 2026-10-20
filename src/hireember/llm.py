@@ -281,17 +281,27 @@ class _GeminiCompatForbidden(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Singleton
+# Per-tier clients
 # ---------------------------------------------------------------------------
 
-_instance: LLMClient | None = None
+# One client per distinct (base_url, model, api_key); tiers with the same settings share it.
+_clients: dict[tuple[str, str, str], LLMClient] = {}
 
 
-def get_client() -> LLMClient:
-    """Return (or create) the module-level LLMClient singleton."""
-    global _instance
-    if _instance is None:
-        base_url, model, api_key = _detect_provider()
-        log.info("LLM provider: %s  model: %s", base_url, model)
-        _instance = LLMClient(base_url, model, api_key)
-    return _instance
+def get_client(tier: str) -> LLMClient:
+    """Return (or create) the LLMClient for ``tier`` ("fast" or "quality").
+
+    Raises RuntimeError with a one-line message when the tier is not configured.
+    """
+    from hireember import models
+
+    try:
+        settings = models.resolve_tier(tier)
+    except models.ModelsError as e:
+        raise RuntimeError(str(e)) from e
+    key = (settings.base_url, settings.model, settings.api_key)
+    client = _clients.get(key)
+    if client is None:
+        log.info("LLM %s tier: %s  model: %s", tier, settings.base_url, settings.model)
+        client = _clients[key] = LLMClient(*key[:2], key[2])
+    return client

@@ -251,7 +251,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
     Returns:
         Dictionary with keys:
             total, by_site, pending_detail, with_description,
-            scored, unscored, tailored, untailored_eligible,
+            scored, unscored, location_skipped, tailored, untailored_eligible,
             with_cover_letter, applied, score_distribution
     """
     if conn is None:
@@ -289,6 +289,10 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
     stats["unscored"] = conn.execute(
         "SELECT COUNT(*) FROM jobs "
         "WHERE full_description IS NOT NULL AND fit_score IS NULL"
+    ).fetchone()[0]
+
+    stats["location_skipped"] = conn.execute(
+        "SELECT COUNT(*) FROM tickets WHERE status = 'skipped' AND status_reason LIKE 'location:%'"
     ).fetchone()[0]
 
     # Score distribution

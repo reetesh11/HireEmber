@@ -1,0 +1,21 @@
+flowchart LR
+  cli[cli.py: models show/set/test, status, ticket log]:::changed --> models[models.py]:::new
+  wiz[wizard/init.py: run_ai_step, chromium offer]:::changed --> models
+  doc[doctor.py: LLM fast/quality, jobspy, chromium]:::changed --> models
+  pipe[pipeline.py: run summary models]:::changed --> models
+  models --> toml[(models.toml in data folder)]:::new
+  models --> llm[llm.py: get_client tier]:::changed
+  llm --> detect[_detect_provider legacy env]
+  scorer[scoring/scorer.py: fast]:::changed --> llm
+  tailor[scoring/tailor.py: quality]:::changed --> llm
+  cover[scoring/cover_letter.py: quality]:::changed --> llm
+  smart[discovery/smartextract.py: fast]:::changed --> llm
+  detail[enrichment/detail.py: fast]:::changed --> llm
+  gating[gating.py score_job_for_ticket]:::changed --> loc[location.py]:::new
+  gating --> scorer
+  gating --> tickets[tickets.py open_ticket/set_status]
+  loc --> searches[(searches.yaml + profile)]
+  db[database.py get_stats]:::changed --> tickets
+  cli --> db
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

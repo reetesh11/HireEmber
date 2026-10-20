@@ -4,7 +4,7 @@ Interactive flow that creates ~/.hireember/ with:
   - resume.txt (and optionally resume.pdf)
   - profile.json
   - searches.yaml
-  - .env (LLM API key)
+  - models.toml (model tiers)
 """
 
 from __future__ import annotations
@@ -12,8 +12,10 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import urlparse
 
 from rich.console import Console
 from rich.panel import Panel
@@ -22,7 +24,6 @@ from rich.prompt import Confirm, Prompt
 
 from hireember.config import (
     APP_DIR,
-    ENV_PATH,
     PROFILE_PATH,
     SEARCH_CONFIG_PATH,
     ensure_dirs,
@@ -265,46 +266,94 @@ def _setup_searches() -> None:
 # AI Features
 # ---------------------------------------------------------------------------
 
-def _setup_ai_features() -> None:
-    """Ask about AI scoring/tailoring — optional LLM configuration."""
-    console.print(Panel(
+def _ask_tier(ask: Callable[..., str], out: Console, tier: str) -> None:
+    """Ask for one tier's provider, model, endpoint and key, then store it in models.toml."""
+    from hireember import models
+
+    out.print(f"\n[bold]{tier} tier[/bold]")
+    while True:
+        provider = str(ask("Provider (gemini/openai/custom)", default="gemini")).strip().lower() or "gemini"
+        if provider in models.PROVIDERS:
+            break
+        out.print("[red]Choose gemini, openai or custom.[/red]")
+    default_model = {"gemini": "gemini-2.0-flash", "openai": "gpt-4o-mini"}.get(provider, "local-model")
+    model = str(ask("Model", default=default_model)).strip() or default_model
+    base_url = None
+    if provider == "custom":
+        base_url = str(ask("Base URL", default="http://localhost:11434/v1")).strip() or "http://localhost:11434/v1"
+    host = urlparse(base_url).hostname if base_url else None
+    api_key = None
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        api_key = str(ask("API key", password=True)).strip() or None
+    path = models.save_tier(tier, provider=provider, model=model, base_url=base_url, api_key=api_key)
+    out.print(f"[green]Saved {tier} tier to {path}[/green]", highlight=False)
+
+
+def run_ai_step(ask: Callable[..., str] | None = None, *, console: Console | None = None) -> None:
+    """Step 4: optional AI setup. Writes the fast tier, and the quality tier when it differs, to models.toml."""
+    out = console or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(escape(question), console=out, **kwargs)
+
+    out.print(Panel(
         "[bold]Step 4: AI Features (optional)[/bold]\n"
         "An LLM powers job scoring, resume tailoring, and cover letters.\n"
         "Without this, you can still discover and enrich jobs."
     ))
-
-    if not Confirm.ask("Enable AI scoring and resume tailoring?", default=True):
-        console.print("[dim]Discovery-only mode. You can configure AI later with [bold]hireember init[/bold].[/dim]")
+    if str(ask("Enable AI scoring and resume tailoring? [Y/n]")).strip().lower() in ("n", "no"):
+        out.print("[dim]Discovery-only mode. You can configure AI later with [bold]hireember init[/bold].[/dim]")
         return
 
-    console.print("Supported providers: [bold]Gemini[/bold] (recommended, free tier), OpenAI, local (Ollama/llama.cpp)")
-    provider = Prompt.ask(
-        "Provider",
-        choices=["gemini", "openai", "local"],
-        default="gemini",
-    )
+    out.print("Supported providers: [bold]gemini[/bold] (recommended, free tier), openai, "
+              "custom (Ollama, llama.cpp or any OpenAI-compatible endpoint)")
+    out.print("The fast tier scores jobs and reads career pages; the quality tier tailors resumes "
+              "and writes cover letters.")
+    _ask_tier(ask, out, "fast")
+    if str(ask("Use a different model for tailoring and cover letters? [y/N]")).strip().lower() in ("y", "yes"):
+        _ask_tier(ask, out, "quality")
+    else:
+        out.print("[yellow]The quality tier is not set separately.[/yellow] It follows GEMINI_API_KEY, "
+                  "OPENAI_API_KEY or LLM_URL when one is set in your environment. Otherwise run "
+                  "[bold]hireember models set quality[/bold] before tailoring.")
 
-    env_lines = ["# HireEmber configuration", ""]
 
-    if provider == "gemini":
-        api_key = Prompt.ask("Gemini API key (from aistudio.google.com)")
-        model = Prompt.ask("Model", default="gemini-2.0-flash")
-        env_lines.append(f"GEMINI_API_KEY={api_key}")
-        env_lines.append(f"LLM_MODEL={model}")
-    elif provider == "openai":
-        api_key = Prompt.ask("OpenAI API key")
-        model = Prompt.ask("Model", default="gpt-4o-mini")
-        env_lines.append(f"OPENAI_API_KEY={api_key}")
-        env_lines.append(f"LLM_MODEL={model}")
-    elif provider == "local":
-        url = Prompt.ask("Local LLM endpoint URL", default="http://localhost:8080/v1")
-        model = Prompt.ask("Model name", default="local-model")
-        env_lines.append(f"LLM_URL={url}")
-        env_lines.append(f"LLM_MODEL={model}")
+# ---------------------------------------------------------------------------
+# Playwright Chromium
+# ---------------------------------------------------------------------------
 
-    env_lines.append("")
-    ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
-    console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
+CHROMIUM_COMMAND = ["playwright", "install", "chromium"]
+
+
+def offer_chromium_install(ask: Callable[..., str] | None = None, *, console: Console | None = None,
+                           runner: Callable[..., object] | None = None) -> bool:
+    """Offer to install Playwright Chromium when it is missing. Returns True when the install succeeded."""
+    from hireember import doctor
+
+    if doctor.chromium_path() is not None:
+        return False
+    out = console or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(escape(question), console=out, **kwargs)
+    if runner is None:
+        runner = subprocess.run
+
+    manual = " ".join(CHROMIUM_COMMAND)
+    answer = str(ask("Playwright Chromium is not installed. Run 'playwright install chromium' now? [Y/n]")).strip()
+    if answer.lower() in ("n", "no"):
+        out.print(f"Skipped. Install it later with: {manual}", highlight=False)
+        return False
+    try:
+        code = runner(CHROMIUM_COMMAND).returncode
+    except OSError as e:
+        out.print(f"Could not run the installer ({escape(str(e))}). Run it yourself: {manual}", highlight=False)
+        return False
+    if code == 0:
+        out.print("Installed.")
+        return True
+    out.print(f"The install did not finish (exit code {code}). Run it yourself: {manual}", highlight=False)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +418,9 @@ def run_wizard() -> None:
     console.print()
 
     # Step 4: AI features (optional LLM)
-    _setup_ai_features()
+    run_ai_step()
+    console.print()
+    offer_chromium_install()
     console.print()
 
     # Step 5: Auto-apply (Claude Code detection)

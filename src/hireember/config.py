@@ -57,6 +57,7 @@ RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
+MODELS_PATH = APP_DIR / "models.toml"
 
 # Generated output
 TAILORED_DIR = APP_DIR / "tailored_resumes"
@@ -292,6 +293,19 @@ TIER_COMMANDS: dict[int, list[str]] = {
 }
 
 
+def has_llm_configured() -> bool:
+    """True when an LLM comes from the legacy environment variables or a tier in models.toml."""
+    if any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
+        return True
+    from hireember import models
+
+    try:
+        data = models.load_models_file()
+    except models.ModelsError:
+        return False
+    return any(data.get(t) for t in models.TIERS)
+
+
 def get_tier() -> int:
     """Detect the current tier based on available dependencies.
 
@@ -301,8 +315,7 @@ def get_tier() -> int:
     """
     load_env()
 
-    has_llm = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
-    if not has_llm:
+    if not has_llm_configured():
         return 1
 
     has_claude = shutil.which("claude") is not None
@@ -333,7 +346,7 @@ def check_tier(required: int, feature: str) -> None:
     _console = Console(stderr=True)
 
     missing: list[str] = []
-    if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
+    if required >= 2 and not has_llm_configured():
         missing.append("LLM API key — run [bold]hireember init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
         if not shutil.which("claude"):

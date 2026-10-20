@@ -6,7 +6,6 @@ can call checks directly and the CLI only renders them.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sqlite3
@@ -207,18 +206,55 @@ def _check_jobspy() -> Check:
         import jobspy  # noqa: F401
     except ImportError:
         return Check("python-jobspy", "WARN",
-                     "pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex")
+                     f"Not importable. Reinstall hireember in the active Python: {sys.executable} -m pip install -e .")
     return Check("python-jobspy", "OK", "Job board scraping available")
 
 
-def _check_llm() -> Check:
-    if os.environ.get("GEMINI_API_KEY"):
-        return Check("LLM API key", "OK", f"Gemini ({os.environ.get('LLM_MODEL', 'gemini-2.0-flash')})")
-    if os.environ.get("OPENAI_API_KEY"):
-        return Check("LLM API key", "OK", f"OpenAI ({os.environ.get('LLM_MODEL', 'gpt-4o-mini')})")
-    if os.environ.get("LLM_URL"):
-        return Check("LLM API key", "OK", f"Local: {os.environ.get('LLM_URL')}")
-    return Check("LLM API key", "MISSING", f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'hireember init')")
+def chromium_path() -> str | None:
+    """Path of the Playwright Chromium executable if it is installed, else None."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            path = p.chromium.executable_path
+    except Exception:  # driver missing, or called inside a running event loop
+        return None
+    return path if path and Path(path).exists() else None
+
+
+def check_playwright_chromium() -> Check:
+    """Playwright's own Chromium is needed for career-site discovery and enrichment."""
+    path = chromium_path()
+    if path:
+        return Check("Playwright Chromium", "OK", path)
+    return Check("Playwright Chromium", "MISSING", "Run: playwright install chromium")
+
+
+def check_llm_tiers() -> list[Check]:
+    """One check per model tier: configured, and its endpoint answers."""
+    from hireember import models
+
+    checks: list[Check] = []
+    for tier in models.TIERS:
+        name = f"LLM {tier}"
+        try:
+            settings = models.resolve_tier(tier)
+        except models.TierNotConfigured as e:
+            note = str(e)
+            if "is not configured" in note:
+                note = f"not configured — run 'hireember models set {tier}' or 'hireember init'"
+            checks.append(Check(name, "MISSING", note))
+            continue
+        except models.ModelsError as e:
+            checks.append(Check(name, "MISSING", str(e)))
+            continue
+        result = models.probe_tier(tier)
+        label = f"{settings.provider} / {settings.model}"
+        if result.ok:
+            checks.append(Check(name, "OK", f"{label}, reachable"))
+        else:
+            checks.append(Check(name, "WARN", f"{label}, not reachable: {result.message}"))
+    return checks
 
 
 def run_checks() -> list[Check]:
@@ -229,7 +265,8 @@ def run_checks() -> list[Check]:
         _check_resume(),
         _check_search_config(),
         _check_jobspy(),
-        _check_llm(),
+        check_playwright_chromium(),
+        *check_llm_tiers(),
         check_claude(),
         check_chrome(),
         check_node(),
