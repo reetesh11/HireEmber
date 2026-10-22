@@ -206,3 +206,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 HireEmber, like upstream ApplyPilot, is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 You are free to use, modify, and distribute this software. If you deploy a modified version as a service, you must release your source code under the same license.
+
+## Start-of-run settings check
+
+`hireember run` and `hireember apply` first check that the settings the requested stages need are in place (model tiers, resume, profile, search config, Playwright browser, Claude Code and Chrome for apply). In a terminal, missing items are listed once and you are offered to set them up on the spot. Declining an item skips the stages that need it. Without a terminal, or with `--no-prompt`, the list is printed and the command exits 1. `--dry-run` and the `apply` utility modes skip the check.
