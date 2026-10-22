@@ -144,3 +144,20 @@ def update_resume(conn: sqlite3.Connection, resume_id: int, file: str | Path,
     target = _store(src, row[1], text_file)
     conn.execute("UPDATE resumes SET file_path = ? WHERE id = ?", (str(target), resume_id))
     conn.commit()
+
+
+def update_resume_meta(conn: sqlite3.Connection, resume_id: int, name: str | None = None,
+                       tags: str | None = None) -> None:
+    """Rename a base resume and/or replace its tags; ``None`` leaves a field as it is."""
+    _row(conn, resume_id)
+    if name is not None:
+        clean = name.strip()
+        if not clean:
+            raise ResumeError("Name cannot be empty.")
+        if conn.execute("SELECT 1 FROM resumes WHERE lower(trim(name)) = ? AND id != ?",
+                        (clean.lower(), resume_id)).fetchone():
+            raise ResumeError(f'A resume named "{name}" already exists.')
+        conn.execute("UPDATE resumes SET name = ? WHERE id = ?", (clean, resume_id))
+    if tags is not None:
+        conn.execute("UPDATE resumes SET tags = ? WHERE id = ?", (_normalize_tags(tags), resume_id))
+    conn.commit()
