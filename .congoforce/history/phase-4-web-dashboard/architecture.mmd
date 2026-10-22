@@ -1,0 +1,19 @@
+flowchart LR
+  browser[Browser UI web/static/index.html]:::new -->|GET/POST /api/*| handler[web/server.py Handler]:::new
+  cli[cli.py dashboard command]:::changed -->|serve host port| handler
+  handler -->|host and origin checks| guard[web/server.py guards]:::new
+  handler --> queries[web/queries.py]:::new
+  handler --> api[web/server.py routes]:::new
+  queries --> db[(hireember.db tickets jobs companies resumes queue_items)]
+  api --> tk[tickets.py set_status set_note]:::changed
+  api --> an[answers.py update delete merge answer_queue_item]:::changed
+  api --> rs[resumes.py update_resume_meta update_resume]:::changed
+  tk --> db
+  an --> db
+  rs --> db
+  mig[migration.py notes columns ensured]:::changed --> db
+  runner[apply runner and CLI writers] -->|set_status writes ticket_events| db
+  browser -->|poll GET /api/updates| handler
+  handler -->|events after cursor| db
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
