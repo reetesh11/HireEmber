@@ -384,7 +384,7 @@ def status() -> None:
 def dashboard(
     host: str = typer.Option("127.0.0.1", "--host", help="Address to bind (only 127.0.0.1 is allowed)."),
     port: int = typer.Option(8765, "--port", help="Port to listen on."),
-    open_browser: bool = typer.Option(False, "--open", help="Open the dashboard in your browser."),
+    open: bool = typer.Option(False, "--open", help="Open the dashboard in your browser."),
 ) -> None:
     """Open the local web dashboard."""
     _bootstrap()
@@ -394,7 +394,7 @@ def dashboard(
     from hireember.web.server import HostRefusedError, serve
 
     try:
-        serve(host, port, open_browser)
+        serve(host, port, open)
     except HostRefusedError as exc:
         console.print(str(exc), markup=False)
         raise typer.Exit(code=2)
