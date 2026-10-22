@@ -174,8 +174,15 @@ hireember apply --continuous            # Run forever, polling for new jobs
 hireember apply --headless              # Headless browser mode
 hireember apply --url URL               # Apply to a specific job
 hireember status                        # Pipeline statistics
-hireember dashboard                     # Open HTML results dashboard
+hireember dashboard                     # Open the local web dashboard
 ```
+
+### Web dashboard
+
+`hireember dashboard` starts a local web dashboard at `http://127.0.0.1:8765` (use `--port` to
+change the port and `--open` to open your browser). It has a ticket board and list with filters,
+a blocked queue where you can answer questions, answer and resume editing, notes, and CSV export.
+It only binds to `127.0.0.1`; any other `--host` is refused. Press Ctrl+C to stop it.
 
 ### Answers, queue and base resumes
 

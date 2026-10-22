@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Local web dashboard** - `hireember dashboard` now serves a local-only (127.0.0.1) web dashboard
+  with a ticket board and list, filters, sorting, blocked queue, status changes, notes and
+  referral notes, answer and resume editing, live updates and CSV export. It replaces the static
+  HTML dashboard.
+
 ### Changed
 - **Renamed to HireEmber** - the package is now `hireember` (`src/hireember`), installed with
   `pip install hireember`, and the command is `hireember` (or `python -m hireember`). The old
