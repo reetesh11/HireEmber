@@ -37,9 +37,9 @@ def _add(conn, url, location, site, strategy):
 
 @pytest.mark.parametrize("site, strategy", [("indeed", "jobspy"), ("Workday X", "workday_api"), ("Acme", "json_ld")])
 def test_skipped_without_llm_call(conn, site, strategy):
-    _add(conn, "u1", "Berlin, Germany", site, strategy)
+    _add(conn, "u1", "Austin, TX", site, strategy)
     result = gating.score_job_for_ticket(conn, "u1", profile=PROFILE)
-    assert (result.status, result.reason, result.score) == ("skipped", "location: Berlin, Germany", None)
+    assert (result.status, result.reason, result.score) == ("skipped", "location: Austin, TX", None)
     assert Client.calls == 0
 
 
@@ -53,7 +53,7 @@ def test_scored_job_is_not_reskipped(conn):
 
 
 def test_repeat_run_keeps_one_ticket_event(conn):
-    _add(conn, "u1", "Berlin, Germany", "indeed", "jobspy")
+    _add(conn, "u1", "Austin, TX", "indeed", "jobspy")
     first = gating.score_job_for_ticket(conn, "u1", profile=PROFILE)
     gating.score_job_for_ticket(conn, "u1", profile=PROFILE)
     n = conn.execute("SELECT COUNT(*) FROM ticket_events WHERE ticket_id = ?", (first.ticket_id,)).fetchone()[0]

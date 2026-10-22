@@ -2,7 +2,9 @@
 
 ``location_skip_reason`` says whether a job's location text clearly does not fit the
 candidate's targets. It is conservative: no targets, blank, placeholder or unrecognisable
-text never skips a job. No LLM is involved.
+text (no known region or country) never skips a job. A country target (Canada, US) accepts any
+of its provinces, territories or states; a region target accepts that region only. Bare ``CA``
+is California, and Canada too when no country is named. No LLM is involved.
 """
 
 from __future__ import annotations
@@ -39,7 +41,12 @@ _REGIONS = {
     "wa": ["washington"], "wv": ["west virginia"], "wi": ["wisconsin"], "wy": ["wyoming"],
     "us": ["usa", "united states", "united states of america"],
     "uk": ["united kingdom", "great britain", "gb"],
+    "canada": [],
 }
+_COUNTRIES = {"us", "uk", "canada"}
+_CANADA_REGIONS = {"on", "bc", "ab", "qc", "mb", "sk", "ns", "nb", "nl", "pe", "nt", "nu", "yt"}
+# region token -> country token (Canadian provinces and territories; US states and DC)
+_REGION_COUNTRY = {r: ("canada" if r in _CANADA_REGIONS else "us") for r in _REGIONS if r not in _COUNTRIES}
 _ALIASES: dict[tuple[str, ...], str] = {}
 for _canon, _names in _REGIONS.items():
     _ALIASES[(_canon,)] = _canon
@@ -151,7 +158,23 @@ def _part_passes(part: str, accept: list[list[str]], reject: list[list[str]], re
         return False
     if not accept:
         return True
-    return any(_contains(rest, a) for a in accept)
+    tokens = set(rest)
+    regions = tokens & _REGION_COUNTRY.keys()
+    countries = tokens & _COUNTRIES
+    if not regions and not countries:
+        return True  # no recognised region or country: nothing to judge by
+    implied = countries | {_REGION_COUNTRY[r] for r in regions}
+    if "ca" in tokens and not countries:
+        implied.add("canada")  # bare CA is California or Canada
+    for a in accept:
+        if _contains(rest, a):
+            return True
+        if len(a) == 1:
+            if a[0] in _COUNTRIES and a[0] in implied:
+                return True  # a country target accepts any region of that country
+            if a[0] in _REGION_COUNTRY and not regions and _REGION_COUNTRY[a[0]] in countries:
+                return True  # a region target accepts text naming only its country
+    return False
 
 
 def location_skip_reason(location: str | None, profile: dict | None = None,

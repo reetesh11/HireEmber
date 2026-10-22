@@ -8,12 +8,12 @@ CFG = {"locations": [{"location": "Toronto, ON", "remote": False}]}
 
 @pytest.mark.parametrize("location, skipped", [
     ("Toronto, ON", False),
-    ("Berlin, Germany", True),
+    ("Austin, TX", True),
     ("Quebec City, Québec, Canada", False),
     ("Chicago, IL", True),
     ("N/A", False),
     ("U.S.A.", True),
-    ("Hybrid - Berlin", True),
+    ("Hybrid - Austin, TX", True),
     ("Berlin | Paris ; Toronto", False),
     ("", False),
 ])

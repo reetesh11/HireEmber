@@ -16,7 +16,7 @@ def skip(location, profile=PROFILE, cfg=CFG):
     return location_skip_reason(location, profile, cfg)
 
 
-@pytest.mark.parametrize("location", ["Berlin, Germany", "  Paris,  France ", "Chicago, IL, USA", "London, UK"])
+@pytest.mark.parametrize("location", ["Austin, TX", "  London,  UK ", "Chicago, IL, USA", "London, UK"])
 def test_ac7_recognised_location_matching_nothing_is_skipped(location):
     assert skip(location) == f"location: {location}"
 
@@ -36,7 +36,7 @@ def test_ac8_recognised_city_in_users_province_not_in_accept_list_is_kept():
 
 
 def test_several_locations_all_failing_is_skipped_with_full_string():
-    text = "Berlin, Germany | Paris, France"
+    text = "Austin, TX | London, UK"
     assert skip(text) == f"location: {text}"
 
 
@@ -65,9 +65,9 @@ def test_remote_accepted_through_accept_entry():
 def test_remote_not_accepted_checks_the_remainder_only():
     assert skip("Remote") is None  # empty remainder passes
     assert skip("Hybrid, Toronto") is None
-    assert skip("Hybrid, Berlin") == "location: Hybrid, Berlin"
-    assert skip("Remote - Germany") == "location: Remote - Germany"
-    assert skip("Berlin, Germany (Remote)") == "location: Berlin, Germany (Remote)"
+    assert skip("Hybrid, Austin, TX") == "location: Hybrid, Austin, TX"
+    assert skip("Remote - UK") == "location: Remote - UK"
+    assert skip("Austin, TX (Remote)") == "location: Austin, TX (Remote)"
 
 
 def test_reject_entry_skips_even_when_country_matches():
@@ -80,7 +80,7 @@ def test_reject_entry_skips_even_when_country_matches():
 def test_top_level_accept_entries_are_used():
     cfg = {"location_accept": ["Berlin"]}
     assert skip("Berlin, Germany", {}, cfg) is None
-    assert skip("Paris, France", {}, cfg) == "location: Paris, France"
+    assert skip("London, UK", {}, cfg) == "location: London, UK"
 
 
 def test_matching_is_whole_word_so_ca_does_not_match_chicago():
@@ -106,16 +106,16 @@ def test_search_cfg_none_loads_searches_file(monkeypatch, tmp_path):
     cfg_path.write_text(yaml.safe_dump({"location": {"accept_patterns": ["Berlin"]}}), encoding="utf-8")
     monkeypatch.setattr(config, "SEARCH_CONFIG_PATH", cfg_path)
     assert location_skip_reason("Berlin, Germany", {}) is None
-    assert location_skip_reason("Paris, France", {}) == "location: Paris, France"
+    assert location_skip_reason("London, UK", {}) == "location: London, UK"
 
 
 def test_search_cfg_none_with_missing_or_unreadable_file_uses_profile_only(monkeypatch, tmp_path):
     from hireember.location import location_skip_reason
 
     monkeypatch.setattr(config, "SEARCH_CONFIG_PATH", tmp_path / "absent.yaml")
-    assert location_skip_reason("Berlin, Germany", PROFILE) == "location: Berlin, Germany"
+    assert location_skip_reason("Austin, TX", PROFILE) == "location: Austin, TX"
     assert location_skip_reason("Toronto, ON", PROFILE) is None
     bad = tmp_path / "bad.yaml"
     bad.write_text("a: [unclosed", encoding="utf-8")
     monkeypatch.setattr(config, "SEARCH_CONFIG_PATH", bad)
-    assert location_skip_reason("Berlin, Germany", PROFILE) == "location: Berlin, Germany"
+    assert location_skip_reason("Austin, TX", PROFILE) == "location: Austin, TX"
