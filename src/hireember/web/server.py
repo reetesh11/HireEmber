@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import tempfile
 import webbrowser
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -114,6 +115,33 @@ def _resumes(conn):
         {"id": r["id"], "name": r["name"], "tags": r["tags"], "pinned": r["pinned"],
          "file_name": Path(r["file_path"] or "").name}
         for r in resumes.list_resumes(conn)]}
+
+
+def _text(body: dict, key: str) -> str:
+    value = body.get(key, "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ApiError(400, f"{key} must be text.", "bad_request")
+    return value
+
+
+def _id(body: dict, key: str) -> int:
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ApiError(400, f"{key} must be a whole number.", "bad_request")
+    return value
+
+
+def _change_status(conn, ticket_id: int, body: dict) -> dict:
+    status = body.get("status")
+    previous = tickets.get_ticket(conn, ticket_id)["status"]
+    override = body.get("override_reason")
+    tickets.set_status(conn, ticket_id, status, actor="user", reason=_text(body, "reason"),
+                       override_reason=override if isinstance(override, str) else None)
+    if previous == status:
+        return {"changed": False, "status": status, "message": f"Ticket is already {status}."}
+    return {"changed": True, "status": status, "message": f"Status changed to {status}."}
 
 
 def _updates(conn, params):
@@ -250,7 +278,69 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(404, "Not found.", "not_found")
 
     def _route_write(self, conn, method: str, path: str) -> None:
-        raise ApiError(404, "Not found.", "not_found")
+        try:
+            self._write(conn, method, path)
+        except tickets.DuplicateTicketError as exc:
+            raise ApiError(409, str(exc), "duplicate", duplicate_of=exc.duplicate_of) from None
+        except tickets.OverrideReasonError as exc:
+            raise ApiError(400, str(exc), "override_reason") from None
+        except tickets.TicketNotFoundError as exc:
+            raise ApiError(404, str(exc), "not_found") from None
+        except (tickets.InvalidStatusError, tickets.TicketError, answers.QueueError,
+                answers.SensitiveQuestionError) as exc:
+            raise ApiError(400, str(exc), "bad_request") from None
+        except answers.AnswerError as exc:
+            missing = str(exc).endswith("not found.")
+            raise ApiError(404 if missing else 400, str(exc),
+                           "not_found" if missing else "bad_request") from None
+        except resumes.ResumeError as exc:
+            missing = str(exc).startswith("No resume with id")
+            raise ApiError(404 if missing else 400, str(exc),
+                           "not_found" if missing else "bad_request") from None
+
+    def _write(self, conn, method: str, path: str) -> None:
+        if method == "POST" and (m := re.fullmatch(r"/api/tickets/(\d+)/status", path)):
+            self._json(200, _change_status(conn, int(m.group(1)), self._json_body()))
+        elif method == "POST" and (m := re.fullmatch(
+                r"/api/tickets/(\d+)/(note|referral-note)", path)):
+            kind = "note" if m.group(2) == "note" else "referral note"
+            tickets.set_note(conn, int(m.group(1)), _text(self._json_body(), "text"), kind=kind)
+            self._json(200, {"ok": True})
+        elif method == "POST" and (m := re.fullmatch(r"/api/queue/(\d+)/answer", path)):
+            result = answers.answer_queue_item(conn, int(m.group(1)),
+                                               _text(self._json_body(), "answer"))
+            self._json(200, {"saved": result.saved, "message": result.message})
+        elif method == "POST" and path == "/api/answers/merge":
+            body = self._json_body()
+            answers.merge_answers(conn, _id(body, "keep_id"), _id(body, "remove_id"),
+                                  question=body.get("question"), answer=body.get("answer"))
+            self._json(200, {"ok": True})
+        elif method == "PUT" and (m := re.fullmatch(r"/api/answers/(\d+)", path)):
+            body = self._json_body()
+            answers.update_answer(conn, int(m.group(1)), _text(body, "question"),
+                                  _text(body, "answer"))
+            self._json(200, {"ok": True, "message": "Answer saved."})
+        elif method == "DELETE" and (m := re.fullmatch(r"/api/answers/(\d+)", path)):
+            answers.delete_answer(conn, int(m.group(1)))
+            self._json(200, {"ok": True})
+        elif method == "PUT" and (m := re.fullmatch(r"/api/resumes/(\d+)", path)):
+            body = self._json_body()
+            resumes.update_resume_meta(conn, int(m.group(1)), _text(body, "name"),
+                                       _text(body, "tags"))
+            self._json(200, {"ok": True, "message": "Resume saved."})
+        elif method == "POST" and (m := re.fullmatch(r"/api/resumes/(\d+)/file", path)):
+            self._replace_resume_file(conn, int(m.group(1)))
+        else:
+            raise ApiError(404, "Not found.", "not_found")
+
+    def _replace_resume_file(self, conn, resume_id: int) -> None:
+        name = Path(self.headers.get("X-Filename", "").replace("\\", "/")).name
+        data = self._read_body()
+        with tempfile.TemporaryDirectory(prefix="hireember-upload-") as tmp:
+            target = Path(tmp) / (name or "upload")
+            target.write_bytes(data)
+            resumes.update_resume(conn, resume_id, target)
+        self._json(200, {"ok": True, "message": "Resume file replaced."})
 
     def do_GET(self):  # noqa: N802
         self._handle("GET")
