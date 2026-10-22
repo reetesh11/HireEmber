@@ -30,7 +30,7 @@ def test_scored_job_outside_location_is_not_retroactively_skipped(tmp_path, isol
     monkeypatch.setattr(config, "SEARCH_CONFIG_PATH", tmp_path / "absent.yaml")
     conn = init_db(isolated_db)
     config.ensure_dirs()
-    store_jobs(conn, [{"url": "u1", "title": "Python Dev", "company": "Acme", "location": "Berlin, Germany"}], "S", "t")
+    store_jobs(conn, [{"url": "u1", "title": "Python Dev", "company": "Acme", "location": "Austin, TX"}], "S", "t")
     conn.execute("UPDATE jobs SET full_description = 'desc'")
     conn.commit()
     f = tmp_path / "r.txt"

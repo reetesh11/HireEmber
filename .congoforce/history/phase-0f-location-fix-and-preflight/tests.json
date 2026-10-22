@@ -1,0 +1,119 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p0f_location_fix.py",
+      "tests": 18,
+      "expect_red": true,
+      "description": "Canada target accepts its regions; Austin, TX and London, UK skipped with location reason"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p0f_location_fix.py",
+      "tests": 18,
+      "expect_red": true,
+      "description": "Region-only target Alberta: Calgary, AB passes, Toronto, ON skipped (in location_fix and location_unchanged)"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p0f_location_fix.py",
+      "tests": 18,
+      "expect_red": true,
+      "description": "Calgary and Greater Toronto Area pass; bare CA passes for Canada and California targets"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p0f_location_unchanged.py",
+      "tests": 18,
+      "expect_red": false,
+      "description": "Remote, empty, placeholder, no-target behaviour unchanged from phase 0e"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p0f_preflight_fix.py",
+      "tests": 21,
+      "expect_red": true,
+      "description": "Unconfigured quality tier on run tailor: reported, prompted, saved to models.toml, proceeds in same process"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p0f_preflight_fix.py",
+      "tests": 21,
+      "expect_red": true,
+      "description": "Several missing items listed in one message then prompted in order"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p0f_preflight_core.py",
+      "tests": 37,
+      "expect_red": true,
+      "description": "Non-interactive or --no-prompt: list printed, exit 1, no stage started"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p0f_preflight_fix.py",
+      "tests": 21,
+      "expect_red": true,
+      "description": "Declining required item exits 1; declining optional stage item runs others and names skipped"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p0f_preflight_core.py",
+      "tests": 37,
+      "expect_red": true,
+      "description": "discover asks no models; score asks fast tier only; tailor/cover ask quality tier"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p0f_preflight_core.py",
+      "tests": 37,
+      "expect_red": true,
+      "description": "apply lists missing Claude Code CLI or Chrome with install pointer, no prompt"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p0f_preflight_unchanged.py",
+      "tests": 5,
+      "expect_red": false,
+      "description": "--dry-run and apply utility modes run no check"
+    },
+    {
+      "criterion": "AC-13",
+      "file": "tests/acceptance/test_p0f_preflight_fix.py",
+      "tests": 21,
+      "expect_red": true,
+      "description": "API key values never appear in output (also checked in core report tests)"
+    },
+    {
+      "criterion": "AC-15",
+      "file": "tests/acceptance/test_p0f_preflight_core.py",
+      "tests": 37,
+      "expect_red": true,
+      "description": "--no-prompt flag exists and shows in run/apply help"
+    },
+    {
+      "criterion": "AC-16",
+      "file": "tests/acceptance/test_p0f_preflight_fix.py",
+      "tests": 21,
+      "expect_red": true,
+      "description": "After a fix the run continues in the same process without re-asking"
+    },
+    {
+      "criterion": "AC-17",
+      "file": "tests/acceptance/test_p0f_preflight_core.py",
+      "tests": 37,
+      "expect_red": true,
+      "description": "find_needs detection per stage (resume, browser, profile/search config)"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-1",
+      "reason": "pytest and ruff check . passing is the suite and lint run itself"
+    },
+    {
+      "criterion": "AC-14",
+      "reason": "Unchanged stages, gating, queue, wizard, doctor and models covered by the existing suite staying green; the no-LLM-call part is tested in test_p0f_preflight_core.py"
+    }
+  ]
+}

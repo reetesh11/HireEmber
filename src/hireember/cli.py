@@ -97,6 +97,7 @@ def run(
             "lenient: banned words ignored, LLM judge skipped (fastest, fewest API calls)."
         ),
     ),
+    no_prompt: bool = typer.Option(False, "--no-prompt", help="Never prompt; list missing settings and exit 1."),
 ) -> None:
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
@@ -114,12 +115,6 @@ def run(
             )
             raise typer.Exit(code=1)
 
-    # Gate AI stages behind Tier 2
-    llm_stages = {"score", "tailor", "cover"}
-    if any(s in stage_list for s in llm_stages) or "all" in stage_list:
-        from hireember.config import check_tier
-        check_tier(2, "AI scoring/tailoring")
-
     # Validate the --validation flag value
     valid_modes = ("strict", "normal", "lenient")
     if validation not in valid_modes:
@@ -129,6 +124,23 @@ def run(
         )
         raise typer.Exit(code=1)
 
+    skipped_notes: list[str] = []
+    if not dry_run:
+        from hireember import preflight
+
+        outcome = preflight.run_preflight("run", stage_list, no_prompt=no_prompt)
+        if not outcome.proceed:
+            raise typer.Exit(code=1)
+        stage_list = outcome.stages
+        skipped_notes = preflight.skip_notes(outcome.skipped)
+
+    # Gate AI stages behind Tier 2
+    llm_stages = {"score", "tailor", "cover"}
+    if any(s in stage_list for s in llm_stages) or "all" in stage_list:
+        from hireember.config import check_tier
+        check_tier(2, "AI scoring/tailoring")
+
+    kwargs = {"skipped_notes": skipped_notes} if skipped_notes else {}
     result = run_pipeline(
         stages=stage_list,
         min_score=min_score,
@@ -136,6 +148,7 @@ def run(
         stream=stream,
         workers=workers,
         validation_mode=validation,
+        **kwargs,
     )
 
     if result.get("errors"):
@@ -158,6 +171,7 @@ def apply(
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
     review: bool = typer.Option(False, "--review", help="Stop before every submit so you can look at the form."),
+    no_prompt: bool = typer.Option(False, "--no-prompt", help="Never prompt; list missing settings and exit 1."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     from hireember.config import is_linkedin_url
@@ -200,6 +214,12 @@ def apply(
     except DefaultProfileError as e:
         console.print(str(e), markup=False, soft_wrap=True)
         raise typer.Exit(code=1)
+
+    if not dry_run:
+        from hireember import preflight
+
+        if not preflight.run_preflight("apply", [], no_prompt=no_prompt, gen_url=bool(gen and url)).proceed:
+            raise typer.Exit(code=1)
 
     # Check 1: Tier 3 required (Claude Code CLI + Chrome)
     check_tier(3, "auto-apply")

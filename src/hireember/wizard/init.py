@@ -217,18 +217,23 @@ def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Co
 # Search config
 # ---------------------------------------------------------------------------
 
-def _setup_searches() -> None:
+def _setup_searches(ask: Callable[..., str] | None = None, out: Console | None = None) -> None:
     """Generate a searches.yaml from user input."""
+    console = out or globals()["console"]
+    if ask is None:
+        def ask(question: str, **kwargs) -> str:
+            return Prompt.ask(question, **kwargs)
+
     console.print(Panel("[bold]Step 3: Job Search Config[/bold]\nDefine what you're looking for."))
 
-    location = Prompt.ask("Target location (e.g. 'Remote', 'Canada', 'New York, NY')", default="Remote")
-    distance_str = Prompt.ask("Search radius in miles (0 for remote-only)", default="0")
+    location = ask("Target location (e.g. 'Remote', 'Canada', 'New York, NY')", default="Remote")
+    distance_str = ask("Search radius in miles (0 for remote-only)", default="0")
     try:
         distance = int(distance_str)
     except ValueError:
         distance = 0
 
-    roles_raw = Prompt.ask(
+    roles_raw = ask(
         "Target job titles (comma-separated, e.g. 'Backend Engineer, Full Stack Developer')"
     )
     roles = [r.strip() for r in roles_raw.split(",") if r.strip()]

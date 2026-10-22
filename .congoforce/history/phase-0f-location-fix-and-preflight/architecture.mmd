@@ -1,0 +1,19 @@
+flowchart LR
+  cli[cli.py run / apply]:::changed -->|stages, no_prompt| pf[preflight.py]:::new
+  pf --> detect[needs detection]:::new
+  detect --> doc[doctor.py checks]
+  detect --> mod[models.py resolve_tier / probe_tier]
+  detect --> res[resumes.py list_resumes]
+  detect --> cfg[config.py paths]
+  pf --> report[message formatter]:::new
+  pf --> loop[prompt loop and stage-skip decision]:::new
+  loop --> wiz[wizard/init.py steps]
+  wiz --> save[models.save_tier]
+  wiz --> reg[resumes.add_resume]
+  wiz --> pw[playwright install chromium]
+  loop -->|stages to run, skipped| cli
+  cli --> pipe[pipeline.run_pipeline]:::changed
+  cli --> launcher[apply/launcher.py]
+  loc[location.py]:::changed --> sc[scoring gate: location_skip_reason]
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

@@ -448,6 +448,7 @@ def run_pipeline(
     stream: bool = False,
     workers: int = 1,
     validation_mode: str = "normal",
+    skipped_notes: list[str] | None = None,
 ) -> dict:
     """Run pipeline stages.
 
@@ -457,6 +458,7 @@ def run_pipeline(
         dry_run: If True, preview stages without executing.
         stream: If True, run stages concurrently (streaming mode).
         workers: Number of parallel threads for discovery/enrichment stages.
+        skipped_notes: Lines (such as "Skipping tailor: ...") printed again after the summary table.
 
     Returns:
         Dict with keys: stages (list of result dicts), errors (dict), elapsed (float).
@@ -524,6 +526,8 @@ def run_pipeline(
     summary.add_row("", "", "")
     summary.add_row("[bold]Total[/bold]", "", f"[bold]{result['elapsed']:.1f}s[/bold]")
     console.print(summary)
+    for note in skipped_notes or []:
+        console.print(f"  {note}", markup=False, highlight=False)
 
     from hireember.models import stage_model_lines
 

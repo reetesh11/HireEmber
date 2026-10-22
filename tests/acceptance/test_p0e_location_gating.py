@@ -42,14 +42,14 @@ def _add(conn, url, location, site="indeed", strategy="jobspy"):
 @pytest.mark.parametrize("site, strategy", SOURCES, ids=["jobspy", "workday", "smart-extract"])
 def test_ac7_ac9_outside_location_is_skipped_without_llm_call(env, site, strategy):
     conn, client = env
-    _add(conn, "https://j/1", "Berlin, Germany", site, strategy)
+    _add(conn, "https://j/1", "Austin, TX", site, strategy)
     result = gating.score_job_for_ticket(conn, "https://j/1", profile=PROFILE)
     assert result.status == "skipped"
-    assert result.reason == "location: Berlin, Germany"
+    assert result.reason == "location: Austin, TX"
     assert result.score is None
     assert client.calls == 0
     t = tickets.get_ticket(conn, result.ticket_id)
-    assert (t["status"], t["status_reason"]) == ("skipped", "location: Berlin, Germany")
+    assert (t["status"], t["status_reason"]) == ("skipped", "location: Austin, TX")
     events = conn.execute("SELECT COUNT(*) FROM ticket_events WHERE ticket_id = ?", (result.ticket_id,)).fetchone()[0]
     assert events >= 1
 
@@ -64,7 +64,7 @@ def test_run_scoring_counts_location_skips_not_errors(env, monkeypatch):
     from hireember.scoring import scorer
 
     conn, client = env
-    _add(conn, "https://j/1", "Berlin, Germany")
+    _add(conn, "https://j/1", "Austin, TX")
     _add(conn, "https://j/2", "Toronto, ON")
     monkeypatch.setattr(scorer, "load_profile", lambda: PROFILE)
     result = scorer.run_scoring()
