@@ -173,14 +173,21 @@ def list_tickets(conn: sqlite3.Connection, filters: TicketFilters | None = None,
     sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "")
     key = _SORT_SQL[sort]
     sql += f" ORDER BY ({key} IS NULL), {key} {direction}, t.id {direction}"
-    rows = []
-    for r in conn.execute(sql, params).fetchall():
-        row = dict(zip(r.keys(), tuple(r)))
-        row["link"] = status_link(row)
-        for k in _INTERNAL:
-            row.pop(k, None)
-        rows.append(row)
-    return rows
+    return [_ticket_row(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def _ticket_row(r: sqlite3.Row) -> dict:
+    row = dict(zip(r.keys(), tuple(r)))
+    row["link"] = status_link(row)
+    for k in _INTERNAL:
+        row.pop(k, None)
+    return row
+
+
+def get_ticket_row(conn: sqlite3.Connection, ticket_id: int) -> dict | None:
+    """One ticket in the same shape as ``list_tickets`` rows, or None."""
+    r = conn.execute(_SELECT + " WHERE t.id = ?", (ticket_id,)).fetchone()
+    return _ticket_row(r) if r else None
 
 
 def status_counts(tickets: list[dict]) -> dict[str, int]:
