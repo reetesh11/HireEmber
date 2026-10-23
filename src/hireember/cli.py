@@ -99,7 +99,11 @@ def run(
     ),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Never prompt; list missing settings and exit 1."),
 ) -> None:
-    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf.
+
+    Exactly one of discover, score or tailor runs only that stage and prints its result.
+    discover searches the company list (see `hireember company add`).
+    """
     _bootstrap()
 
     from hireember.pipeline import run_pipeline
@@ -124,6 +128,16 @@ def run(
         )
         raise typer.Exit(code=1)
 
+    single_stage = (len(stage_list) == 1 and stage_list[0] in ("discover", "score", "tailor")
+                    and not dry_run and not stream)
+    if single_stage:
+        from hireember import runs
+        from hireember.database import get_connection
+
+        if runs.is_running(get_connection()):
+            console.print("A run is already in progress.", markup=False)
+            raise typer.Exit(code=1)
+
     skipped_notes: list[str] = []
     if not dry_run:
         from hireember import preflight
@@ -139,6 +153,15 @@ def run(
     if any(s in stage_list for s in llm_stages) or "all" in stage_list:
         from hireember.config import check_tier
         check_tier(2, "AI scoring/tailoring")
+
+    if single_stage:
+        try:
+            outcome_msg = runs.run_stage(stage_list[0], min_score=min_score, validation_mode=validation)
+        except runs.RunInProgressError as e:
+            console.print(str(e), markup=False)
+            raise typer.Exit(code=1)
+        console.print(outcome_msg.message, markup=False, highlight=False)
+        return
 
     kwargs = {"skipped_notes": skipped_notes} if skipped_notes else {}
     result = run_pipeline(
@@ -279,17 +302,29 @@ def apply(
         console.print(f"  Target:   {url}")
     console.print()
 
-    apply_main(
-        limit=effective_limit,
-        target_url=url,
-        min_score=min_score,
-        headless=headless,
-        model=model,
-        dry_run=dry_run,
-        continuous=continuous,
-        workers=workers,
-        review=True if review else None,
-    )
+    from hireember import runs
+
+    lock_conn = get_connection()
+    try:
+        token = runs.acquire_lock(lock_conn)
+    except runs.RunInProgressError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+    try:
+        submitted = apply_main(
+            limit=effective_limit,
+            target_url=url,
+            min_score=min_score,
+            headless=headless,
+            model=model,
+            dry_run=dry_run,
+            continuous=continuous,
+            workers=workers,
+            review=True if review else None,
+        )
+    finally:
+        runs.release_lock(lock_conn, token)
+    console.print(f"apply: {submitted or 0} submitted.", markup=False)
 
 
 @app.command()
