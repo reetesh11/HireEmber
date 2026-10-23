@@ -19,7 +19,8 @@ logging.basicConfig(
 
 app = typer.Typer(
     name="hireember",
-    help="HireEmber — AI-powered end-to-end job application pipeline.",
+    help=("HireEmber — AI-powered end-to-end job application pipeline. "
+          "Keep a company list, schedule daily runs, and export your results."),
     no_args_is_help=True,
 )
 console = Console()
@@ -62,7 +63,10 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """HireEmber — AI-powered end-to-end job application pipeline."""
+    """HireEmber — AI-powered end-to-end job application pipeline.
+
+    Keep a company list, schedule daily runs, and export your results.
+    """
 
 
 @app.command()
@@ -598,7 +602,7 @@ def company_manual(
     console.print(f'Company "{name}" is {state}.', markup=False)
 
 
-@company_app.command("add")
+@company_app.command("add", help="Add a company to the list discovery searches.")
 def company_add(
     name: str = typer.Argument(..., help="Company name."),
     url: str = typer.Option(..., "--url", help="Careers page URL."),
@@ -619,7 +623,7 @@ def company_add(
     console.print(f'Added company "{name}".', markup=False)
 
 
-@company_app.command("remove")
+@company_app.command("remove", help="Take a company off the list discovery searches.")
 def company_remove(name: str = typer.Argument(..., help="Company name.")) -> None:
     """Take a company off the list discovery searches. Its past jobs and tickets stay."""
     _bootstrap()
@@ -667,7 +671,7 @@ def _applying_line(schedule) -> str:
     return "Scheduled applying: off."
 
 
-@app.command()
+@app.command(help="Show or set the daily times for scheduled runs, and whether they may apply.")
 def schedule(
     at: Optional[list[str]] = typer.Option(
         None, "--at", help="Daily run time, 24-hour HH:MM (repeat for several), e.g. --at 08:00."),
@@ -721,7 +725,7 @@ def schedule(
     console.print(_applying_line(current), markup=False)
 
 
-@app.command()
+@app.command(help="Run in the foreground and start scheduled runs when their time comes.")
 def scheduler(
     once: bool = typer.Option(False, "--once", help="Check for a due run once and exit."),
     poll_seconds: float = typer.Option(30, "--poll-seconds", help="Seconds between checks."),
@@ -743,7 +747,7 @@ def scheduler(
 # Export
 # ---------------------------------------------------------------------------
 
-@app.command("export")
+@app.command("export", help="Write your tickets and runs to tickets.csv and runs.csv.")
 def export_command(
     out: str = typer.Option(".", "--out", help="Folder to write tickets.csv and runs.csv into."),
 ) -> None:
