@@ -1,0 +1,115 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p5_scheduler.py",
+      "tests": 24,
+      "expect_red": true,
+      "description": "test clock tick at 08:00 starts one scheduled run, one runs row with counts, no second run same day"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p5_runs.py",
+      "tests": 19,
+      "expect_red": true,
+      "description": "overlapping triggers give one runs row (also scheduler tick overlap in test_p5_scheduler.py, busy stage POST in surfaces)"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p5_scheduler.py",
+      "tests": 24,
+      "expect_red": true,
+      "description": "scheduled run with applying off never calls the apply stage callable (also test_p5_runs.py apply gating)"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p5_companies.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "discovery over three companies stores all fields; rediscovery keeps one record and updates last-seen"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p5_companies.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "failing source logged against its name in the run log; other sources still stored"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p5_companies.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "add/remove company changes what next run searches; company CLI messages"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p5_surfaces.py",
+      "tests": 17,
+      "expect_red": true,
+      "description": "schedule, scheduler, export --help exit 0; top-level help lists new commands"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p5_runs.py",
+      "tests": 19,
+      "expect_red": true,
+      "description": "blocked tickets enter the queue once each with company, reason, page link"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p5_surfaces.py",
+      "tests": 17,
+      "expect_red": true,
+      "description": "/runs page contains each run's counts, empty state, /api/runs, index tab and buttons"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p5_scheduler.py",
+      "tests": 24,
+      "expect_red": true,
+      "description": "several missed slots start exactly one run; README documents missed-run catch-up"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p5_scheduler.py",
+      "tests": 24,
+      "expect_red": true,
+      "description": "scheduled apply limit is per-day limit minus today's submissions; skipped when reached"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p5_runs.py",
+      "tests": 19,
+      "expect_red": true,
+      "description": "each stage runs alone via run_stage/start_stage_async, no runs row (also CLI busy and POST stage in surfaces)"
+    },
+    {
+      "criterion": "AC-13",
+      "file": "tests/acceptance/test_p5_scheduler.py",
+      "tests": 24,
+      "expect_red": true,
+      "description": "schedule set/get/clear, parse_time rejects invalid values (also schedule CLI in surfaces)"
+    },
+    {
+      "criterion": "AC-14",
+      "file": "tests/acceptance/test_p5_surfaces.py",
+      "tests": 17,
+      "expect_red": true,
+      "description": "export writes tickets.csv and runs.csv with headers and rows; bad directory raises"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p5_unchanged.py",
+      "tests": 9,
+      "expect_red": false,
+      "description": "--help exits 0 for existing commands on a fresh install (unchanged behaviour)"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-3 (real browser launcher)",
+      "reason": "tests assert the injected apply stage is never invoked in a scheduled run; the verifier checks by reading code that only the apply stage reaches the browser launcher"
+    }
+  ]
+}
