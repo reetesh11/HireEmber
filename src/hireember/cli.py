@@ -658,6 +658,88 @@ def company_list() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Schedule
+# ---------------------------------------------------------------------------
+
+def _applying_line(schedule) -> str:
+    if schedule.apply:
+        return f"Scheduled applying: on (up to {schedule.apply_limit} per day)."
+    return "Scheduled applying: off."
+
+
+@app.command()
+def schedule(
+    at: Optional[list[str]] = typer.Option(
+        None, "--at", help="Daily run time, 24-hour HH:MM (repeat for several), e.g. --at 08:00."),
+    off: bool = typer.Option(False, "--off", help="Clear the schedule."),
+    apply: Optional[str] = typer.Option(
+        None, "--apply", help="Let scheduled runs apply to jobs: on or off (default off)."),
+    apply_limit: Optional[int] = typer.Option(
+        None, "--apply-limit", help="Most applications scheduled runs make per day (default 25)."),
+) -> None:
+    """Show or set the daily times for scheduled runs. Runs fire only while `hireember scheduler` runs."""
+    _bootstrap()
+
+    from hireember import scheduler
+    from hireember.database import get_connection
+
+    conn = get_connection()
+    if apply is not None and apply not in ("on", "off"):
+        console.print('Invalid --apply value "%s". Use on or off.' % apply, markup=False)
+        raise typer.Exit(code=1)
+    if apply_limit is not None and apply_limit < 1:
+        console.print("The apply limit must be at least 1.", markup=False)
+        raise typer.Exit(code=1)
+    try:
+        times = sorted({scheduler.parse_time(t) for t in at or []})
+    except scheduler.ScheduleError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+
+    changed = False
+    if apply is not None or apply_limit is not None:
+        scheduler.set_apply(conn, on=None if apply is None else apply == "on", limit=apply_limit)
+        changed = True
+    if off:
+        scheduler.clear_schedule(conn)
+        console.print("Schedule cleared.", markup=False)
+        changed = True
+    elif times:
+        scheduler.set_schedule(conn, times)
+        console.print(f"Schedule set: daily at {', '.join(times)}.", markup=False)
+        console.print(
+            "Runs fire only while `hireember scheduler` is running. A run missed while it was "
+            "not running starts once at the next start.", markup=False)
+        changed = True
+
+    current = scheduler.get_schedule(conn)
+    if at or off:
+        return
+    if not changed:
+        line = f"Scheduled daily at {', '.join(current.times)}." if current.times else "No schedule set."
+        console.print(line, markup=False)
+    console.print(_applying_line(current), markup=False)
+
+
+@app.command()
+def scheduler(
+    once: bool = typer.Option(False, "--once", help="Check for a due run once and exit."),
+    poll_seconds: float = typer.Option(30, "--poll-seconds", help="Seconds between checks."),
+) -> None:
+    """Run in the foreground and start scheduled runs when their time comes."""
+    _bootstrap()
+
+    from hireember import scheduler as scheduler_mod
+
+    if not once:
+        console.print("Scheduler running. Press Ctrl+C to stop.", markup=False)
+    try:
+        scheduler_mod.serve(poll_seconds=poll_seconds, once=once)
+    except KeyboardInterrupt:
+        console.print("Scheduler stopped.", markup=False)
+
+
+# ---------------------------------------------------------------------------
 # Model tiers
 # ---------------------------------------------------------------------------
 
