@@ -29,7 +29,7 @@ def test_run_values_are_guarded(conn, tmp_path):
     conn.commit()
     export_csv(conn, tmp_path)
     rows = list(csv.DictReader(io.StringIO((tmp_path / "runs.csv").read_text())))
-    assert rows[0]["trigger"].startswith("'") or not rows[0]["trigger"].startswith("=")
+    assert rows[0]["trigger"] == "'=cmd"
 
 
 def test_not_a_folder(conn, tmp_path):
