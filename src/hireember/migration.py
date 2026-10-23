@@ -136,13 +136,55 @@ def ensure_phase3_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_PHASE5_RUN_COLUMNS: tuple[tuple[str, str], ...] = (
+    ('"trigger"', "TEXT"), ("status", "TEXT"),
+    ("found", "INTEGER DEFAULT 0"), ("scored", "INTEGER DEFAULT 0"),
+    ("skipped", "INTEGER DEFAULT 0"), ("tickets_created", "INTEGER DEFAULT 0"),
+    ("tickets_blocked", "INTEGER DEFAULT 0"),
+)
+
+_RUN_LOCK = """
+CREATE TABLE IF NOT EXISTS run_lock (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    pid INTEGER,
+    token TEXT,
+    run_id INTEGER,
+    acquired_at TEXT
+)
+"""
+
+_RUN_LOG = """
+CREATE TABLE IF NOT EXISTS run_log (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER,
+    time TEXT,
+    source TEXT,
+    level TEXT,
+    message TEXT
+)
+"""
+
+
+def ensure_phase5_schema(conn: sqlite3.Connection) -> None:
+    """Add run summary columns, the single-run lock and the run log (idempotent, additive)."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
+    for name, ddl in _PHASE5_RUN_COLUMNS:
+        if name.strip('"') not in existing:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {name} {ddl}")
+    conn.execute(_RUN_LOCK)
+    conn.execute(_RUN_LOG)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_run_log_run ON run_log(run_id)")
+    conn.commit()
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
-    """Create the eight new tables and indexes (idempotent), then the phase 3 additions."""
+    """Create the eight new tables and indexes (idempotent), then the phase 3 and 5 additions."""
     for stmt in _SCHEMA.split(";"):
         if stmt.strip():
             conn.execute(stmt)
     conn.commit()
     ensure_phase3_schema(conn)
+    ensure_phase5_schema(conn)
 
 
 def backfill_jobs(conn: sqlite3.Connection) -> None:
