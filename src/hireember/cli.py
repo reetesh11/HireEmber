@@ -740,6 +740,29 @@ def scheduler(
 
 
 # ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+@app.command("export")
+def export_command(
+    out: str = typer.Option(".", "--out", help="Folder to write tickets.csv and runs.csv into."),
+) -> None:
+    """Write your tickets and your runs to two CSV files (tickets.csv and runs.csv)."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.export import ExportError, export_csv
+
+    try:
+        results = export_csv(get_connection(), out)
+    except ExportError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+    for path, count in results:
+        console.print(f"Wrote {path} ({count} rows).", markup=False, soft_wrap=True)
+
+
+# ---------------------------------------------------------------------------
 # Model tiers
 # ---------------------------------------------------------------------------
 
