@@ -538,7 +538,8 @@ def queue_ready(item_id: int = typer.Argument(..., help="Queue item id.")) -> No
 # Companies
 # ---------------------------------------------------------------------------
 
-company_app = typer.Typer(help="Companies and the manual-only flag.", no_args_is_help=True)
+company_app = typer.Typer(
+    help="The companies HireEmber searches, and the manual-only flag.", no_args_is_help=True)
 app.add_typer(company_app, name="company")
 
 
@@ -562,9 +563,47 @@ def company_manual(
     console.print(f'Company "{name}" is {state}.', markup=False)
 
 
+@company_app.command("add")
+def company_add(
+    name: str = typer.Argument(..., help="Company name."),
+    url: str = typer.Option(..., "--url", help="Careers page URL."),
+    ats: str = typer.Option(..., "--ats", help="ATS type: workday or careers-page."),
+) -> None:
+    """Add a company to the list discovery searches."""
+    _bootstrap()
+
+    from hireember.companies import add_company
+    from hireember.database import get_connection
+    from hireember.tickets import TicketError
+
+    try:
+        add_company(get_connection(), name, url, ats)
+    except TicketError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f'Added company "{name}".', markup=False)
+
+
+@company_app.command("remove")
+def company_remove(name: str = typer.Argument(..., help="Company name.")) -> None:
+    """Take a company off the list discovery searches. Its past jobs and tickets stay."""
+    _bootstrap()
+
+    from hireember.companies import remove_company
+    from hireember.database import get_connection
+    from hireember.tickets import TicketError
+
+    try:
+        remove_company(get_connection(), name)
+    except TicketError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f'Removed company "{name}".', markup=False)
+
+
 @company_app.command("list")
 def company_list() -> None:
-    """Show every company and whether it is manual-only."""
+    """Show every company on the list, its careers page, ATS and manual-only flag."""
     _bootstrap()
 
     from hireember.database import get_connection
@@ -575,10 +614,11 @@ def company_list() -> None:
         console.print("No companies yet.")
         return
     table = Table(title="Companies", show_header=True, header_style="bold cyan")
-    for column in ("Id", "Name", "Manual-only"):
-        table.add_column(column)
+    for column in ("Id", "Name", "Careers URL", "ATS", "Manual-only"):
+        table.add_column(column, overflow="fold")
     for r in rows:
-        table.add_row(str(r["id"]), r["name"], "yes" if r["manual_only"] else "no")
+        table.add_row(str(r["id"]), r["name"], r["careers_url"], r["ats_type"],
+                      "yes" if r["manual_only"] else "no")
     console.print(table)
 
 

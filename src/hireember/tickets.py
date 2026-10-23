@@ -135,11 +135,14 @@ def set_company_manual(conn: sqlite3.Connection, name: str, manual: bool = True)
 
 
 def list_companies(conn: sqlite3.Connection) -> list[dict]:
-    """Companies ordered by name with their manual-only flag."""
+    """Active companies ordered by name with their manual-only flag, careers URL and ATS type."""
     rows = conn.execute(
-        "SELECT id, name, COALESCE(manual_only, 0) FROM companies ORDER BY lower(name), id"
+        "SELECT id, name, COALESCE(manual_only, 0), COALESCE(careers_url, ''), "
+        "COALESCE(ats_type, '') FROM companies WHERE COALESCE(active, 1) = 1 "
+        "ORDER BY lower(name), id"
     ).fetchall()
-    return [{"id": r[0], "name": r[1], "manual_only": bool(r[2])} for r in rows]
+    return [{"id": r[0], "name": r[1], "manual_only": bool(r[2]), "careers_url": r[3],
+             "ats_type": r[4]} for r in rows]
 
 
 def is_manual_company(conn: sqlite3.Connection, ticket_id: int) -> bool:
