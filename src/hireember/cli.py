@@ -381,13 +381,28 @@ def status() -> None:
 
 
 @app.command()
-def dashboard() -> None:
-    """Generate and open the HTML dashboard in your browser."""
+def dashboard(
+    host: str = typer.Option("127.0.0.1", "--host", help="Address to bind (only 127.0.0.1 is allowed)."),
+    port: int = typer.Option(8765, "--port", help="Port to listen on."),
+    open: bool = typer.Option(False, "--open", help="Open the dashboard in your browser."),
+) -> None:
+    """Open the local web dashboard."""
     _bootstrap()
 
-    from hireember.view import open_dashboard
+    import errno
 
-    open_dashboard()
+    from hireember.web.server import HostRefusedError, serve
+
+    try:
+        serve(host, port, open)
+    except HostRefusedError as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(code=2)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        console.print(f"Port {port} is already in use. Choose another with --port.", markup=False)
+        raise typer.Exit(code=1)
 
 
 @app.command()

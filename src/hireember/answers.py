@@ -31,6 +31,10 @@ class SensitiveQuestionError(ValueError):
     """The question asks for a password, token, payment detail or government ID."""
 
 
+class AnswerError(ValueError):
+    """A stored answer could not be changed."""
+
+
 class QueueError(Exception):
     """A queue item could not be answered."""
 
@@ -95,6 +99,63 @@ def save_answer(conn: sqlite3.Connection, question: str, answer: str, source: st
 def list_answers(conn: sqlite3.Connection) -> list[dict]:
     return _rows(conn, "SELECT id, question_text, normalized_key, answer, source, times_used, "
                        "last_used_at FROM answers ORDER BY id")
+
+
+def _check_answer(question: str, answer: str) -> None:
+    if is_sensitive(question):
+        raise SensitiveQuestionError(
+            "Passwords, tokens, payment details and government IDs are never stored.")
+    if not (answer or "").strip():
+        raise AnswerError("Answer cannot be empty.")
+
+
+def _answer_row(conn: sqlite3.Connection, answer_id: int) -> dict:
+    rows = _rows(conn, "SELECT id, question_text, answer, times_used, last_used_at "
+                       "FROM answers WHERE id = ?", (answer_id,))
+    if not rows:
+        raise AnswerError(f"Answer {answer_id} not found.")
+    return rows[0]
+
+
+def update_answer(conn: sqlite3.Connection, answer_id: int, question: str, answer: str) -> None:
+    """Change the question text and answer of a stored entry (source is kept)."""
+    _answer_row(conn, answer_id)
+    _check_answer(question, answer)
+    conn.execute("UPDATE answers SET question_text = ?, normalized_key = ?, answer = ? WHERE id = ?",
+                 (question, normalize_question(question), answer, answer_id))
+    conn.commit()
+
+
+def delete_answer(conn: sqlite3.Connection, answer_id: int) -> None:
+    """Remove a stored answer; queue items and tickets are untouched."""
+    _answer_row(conn, answer_id)
+    conn.execute("DELETE FROM answers WHERE id = ?", (answer_id,))
+    conn.commit()
+
+
+def merge_answers(conn: sqlite3.Connection, keep_id: int, remove_id: int, *,
+                  question: str | None = None, answer: str | None = None) -> int:
+    """Fold ``remove_id`` into ``keep_id`` using the chosen text; usage counts are added."""
+    if keep_id == remove_id:
+        raise AnswerError("Choose two different answers to merge.")
+    keep = _answer_row(conn, keep_id)
+    gone = _answer_row(conn, remove_id)
+    question = keep["question_text"] if question is None else question
+    answer = keep["answer"] if answer is None else answer
+    _check_answer(question, answer)
+    last = max((v for v in (keep["last_used_at"], gone["last_used_at"]) if v), default=None)
+    try:
+        conn.execute(
+            "UPDATE answers SET question_text = ?, normalized_key = ?, answer = ?, "
+            "times_used = ?, last_used_at = ? WHERE id = ?",
+            (question, normalize_question(question), answer,
+             (keep["times_used"] or 0) + (gone["times_used"] or 0), last, keep_id))
+        conn.execute("DELETE FROM answers WHERE id = ?", (remove_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return keep_id
 
 
 # -- queue ------------------------------------------------------------------

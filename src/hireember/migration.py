@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+CREATE INDEX IF NOT EXISTS idx_tickets_updated ON tickets(updated_at);
 """
 
 
@@ -117,6 +118,8 @@ _PHASE3_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("confirmation_link", "TEXT"),
         ("session_link", "TEXT"),
         ("resume_link", "TEXT"),
+        ("notes", "TEXT"),
+        ("referral_note", "TEXT"),
     ),
 }
 

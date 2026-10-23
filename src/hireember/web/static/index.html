@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HireEmber dashboard</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#d9dde3; --text:#1c2430; --muted:#5d6877; --accent:#b45309; --ok:#047857; --err:#b91c1c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; color:var(--accent); }
+  [role=tablist] { display:flex; gap:4px; }
+  [role=tab] { border:0; background:none; padding:8px 12px; cursor:pointer; border-bottom:2px solid transparent; font:inherit; }
+  [role=tab][aria-selected=true] { border-color:var(--accent); font-weight:600; }
+  #live { margin-left:auto; font-size:12px; color:var(--ok); }
+  #live.down { color:var(--err); }
+  main { padding:16px; }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:12px; }
+  .bar label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); }
+  input, select, textarea, button { font:inherit; }
+  input, select, textarea { padding:4px 6px; border:1px solid var(--line); border-radius:4px; background:#fff; }
+  button { padding:5px 10px; border:1px solid var(--line); background:var(--card); border-radius:4px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button[aria-pressed=true] { background:#fde7c8; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  a.button { padding:5px 10px; border:1px solid var(--line); background:var(--card); border-radius:4px; color:inherit; text-decoration:none; }
+  .layout { display:flex; gap:16px; align-items:flex-start; }
+  .view { flex:1; min-width:0; }
+  .board { display:flex; gap:10px; overflow-x:auto; padding-bottom:8px; }
+  .col { min-width:200px; flex:1; background:#eceff3; border-radius:6px; padding:8px; }
+  .col h3 { margin:0 0 8px; font-size:13px; text-transform:capitalize; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:8px; cursor:pointer; }
+  .card.sel { outline:2px solid var(--accent); }
+  .card .t { font-weight:600; }
+  .muted { color:var(--muted); font-size:12px; }
+  table { border-collapse:collapse; width:100%; background:var(--card); }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th.sortable { cursor:pointer; user-select:none; }
+  tr.row { cursor:pointer; }
+  tr.sel { background:#fff4e3; }
+  aside { width:380px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px; }
+  aside h2 { margin:0 0 6px; font-size:16px; }
+  aside label { display:block; margin-top:8px; font-size:12px; color:var(--muted); }
+  aside textarea, aside input, aside select { width:100%; }
+  .hist { list-style:none; padding:0; margin:6px 0 0; font-size:12px; }
+  .hist li { border-top:1px solid var(--line); padding:4px 0; }
+  .msg { color:var(--err); margin:6px 0; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px; margin-bottom:10px; }
+  #toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:6px; }
+  .toast { background:#1c2430; color:#fff; padding:8px 12px; border-radius:6px; }
+  .toast.error { background:var(--err); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>HireEmber</h1>
+  <div role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-tickets" aria-selected="true">Tickets</button>
+    <button role="tab" id="tab-blocked" aria-selected="false">Blocked (0)</button>
+    <button role="tab" id="tab-answers" aria-selected="false">Answers</button>
+    <button role="tab" id="tab-resumes" aria-selected="false">Resumes</button>
+  </div>
+  <span id="live" role="status">Live</span>
+</header>
+<main>
+  <section id="page-tickets">
+    <div class="bar">
+      <span role="group" aria-label="View">
+        <button id="btn-board" aria-pressed="true">Board</button>
+        <button id="btn-list" aria-pressed="false">List</button>
+      </span>
+      <label for="f-company">Company<input id="f-company" type="text"></label>
+      <label for="f-min">Min score<input id="f-min" type="number" min="0" max="100" style="width:80px"></label>
+      <label for="f-max">Max score<input id="f-max" type="number" min="0" max="100" style="width:80px"></label>
+      <label for="f-from">From<input id="f-from" type="date"></label>
+      <label for="f-to">To<input id="f-to" type="date"></label>
+      <label for="f-resume">Resume<select id="f-resume"><option value="">Any</option></select></label>
+      <button id="btn-clear">Clear filters</button>
+      <a id="btn-export" class="button" href="/api/export.csv" download>Export CSV</a>
+    </div>
+    <div id="filter-error" class="msg" role="alert"></div>
+    <div class="layout">
+      <div class="view" id="tickets-view"></div>
+      <aside id="detail" class="hidden" aria-label="Ticket details"></aside>
+    </div>
+  </section>
+  <section id="page-blocked" class="hidden"></section>
+  <section id="page-answers" class="hidden"></section>
+  <section id="page-resumes" class="hidden"></section>
+</main>
+<div id="toasts" aria-live="polite"></div>
+<script>
+"use strict";
+const STATUSES = ["pending", "started", "applying", "blocked for human", "applied", "skipped", "closed"];
+const NO_LINK = "No link available";
+const state = {
+  tab: "tickets", view: "board", sort: "updated", dir: "desc",
+  data: null, selected: null, cursor: null, blocked: null, loadError: null, loading: true,
+  resumes: [], answers: null, mergeIds: new Set(), editingAnswer: null, editingResume: null,
+};
+
+/* ---------- helpers (all user text goes through textContent) ---------- */
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else if (k in el && typeof v !== "string") el[k] = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const $ = (id) => document.getElementById(id);
+function toast(text, error) {
+  const t = h("div", { class: "toast" + (error ? " error" : ""), role: error ? "alert" : "status" }, text);
+  $("toasts").append(t);
+  setTimeout(() => t.remove(), 4000);
+}
+async function api(method, path, body, headers) {
+  const opts = { method, headers: Object.assign({}, headers) };
+  if (body !== undefined && !(body instanceof Blob)) {
+    opts.body = JSON.stringify(body);
+    opts.headers["Content-Type"] = "application/json";
+  } else if (body instanceof Blob) opts.body = body;
+  let res;
+  try { res = await fetch(path, opts); } catch (e) { throw Object.assign(new Error("Could not reach the dashboard."), { network: true }); }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  if (!res.ok) throw Object.assign(new Error((data && data.error) || "Request failed."), { status: res.status, data });
+  return data;
+}
+function setLive(ok) {
+  const el = $("live");
+  el.textContent = ok ? "Live" : "Reconnecting...";
+  el.className = ok ? "" : "down";
+}
+function copyPath(path) {
+  if (navigator.clipboard) navigator.clipboard.writeText(path).then(() => toast("Path copied."), () => toast("Could not copy the path.", true));
+  else toast(path);
+}
+function linkNode(link) {
+  if (!link) return h("span", { class: "muted" }, NO_LINK);
+  if (link.local) {
+    return h("span", {}, link.label + ": ", h("code", {}, link.url), " ",
+      h("button", { type: "button", onclick: (e) => { e.stopPropagation(); copyPath(link.url); } }, "Copy path"));
+  }
+  return h("span", {}, h("a", { href: link.url, target: "_blank", rel: "noopener noreferrer", onclick: (e) => e.stopPropagation() }, link.label));
+}
+
+/* ---------- filters and URL state ---------- */
+const FILTER_FIELDS = { company: "f-company", score_min: "f-min", score_max: "f-max", date_from: "f-from", date_to: "f-to", resume_id: "f-resume" };
+function filterParams() {
+  const p = new URLSearchParams();
+  for (const [k, id] of Object.entries(FILTER_FIELDS)) {
+    const v = $(id).value.trim();
+    if (v) p.set(k, v);
+  }
+  return p;
+}
+function queryString(extra) {
+  const p = filterParams();
+  p.set("sort", state.sort); p.set("dir", state.dir);
+  return p.toString() + (extra ? "&" + extra : "");
+}
+function mirrorUrl() {
+  const p = filterParams();
+  if (state.view !== "board") p.set("view", state.view);
+  if (state.sort !== "updated" || state.dir !== "desc") { p.set("sort", state.sort); p.set("dir", state.dir); }
+  if (state.tab !== "tickets") p.set("tab", state.tab);
+  const qs = p.toString();
+  history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  const exp = filterParams(); exp.set("sort", state.sort); exp.set("dir", state.dir);
+  $("btn-export").setAttribute("href", "/api/export.csv?" + exp.toString());
+}
+function readUrl() {
+  const p = new URLSearchParams(location.search);
+  for (const [k, id] of Object.entries(FILTER_FIELDS)) if (p.has(k)) $(id).value = p.get(k);
+  if (p.get("view") === "list") state.view = "list";
+  if (p.get("sort")) state.sort = p.get("sort");
+  if (p.get("dir") === "asc" || p.get("dir") === "desc") state.dir = p.get("dir");
+  if (["tickets", "blocked", "answers", "resumes"].includes(p.get("tab"))) state.tab = p.get("tab");
+}
+
+/* ---------- tickets ---------- */
+async function loadTickets() {
+  try {
+    const data = await api("GET", "/api/tickets?" + queryString());
+    state.data = data; state.loadError = null; state.loading = false;
+    $("filter-error").textContent = "";
+    updateBlockedTab(data.blocked_count);
+  } catch (e) {
+    state.loading = false;
+    if (e.status === 400) { $("filter-error").textContent = e.message; return renderTickets(); }
+    if (!state.data) state.loadError = e.message;
+    else return;
+  }
+  renderTickets();
+  if (state.selected != null) refreshDetail(false);
+}
+function updateBlockedTab(n) { $("tab-blocked").textContent = "Blocked (" + n + ")"; }
+
+function renderTickets() {
+  const root = $("tickets-view");
+  root.replaceChildren();
+  if (state.loading) return root.append(h("p", {}, "Loading tickets..."));
+  if (state.loadError) return root.append(h("p", { class: "msg" }, "Could not load tickets. ", h("button", { onclick: () => { state.loading = true; renderTickets(); loadTickets(); } }, "Retry")));
+  const { tickets, counts } = state.data;
+  if (!tickets.length) {
+    const filtered = filterParams().toString() !== "";
+    root.append(filtered
+      ? h("p", {}, "No tickets match these filters. ", h("button", { onclick: clearFilters }, "Clear filters"))
+      : h("p", {}, "No tickets yet."));
+  }
+  if (state.view === "board") root.append(renderBoard(tickets, counts));
+  else if (tickets.length) root.append(renderList(tickets));
+  $("btn-board").setAttribute("aria-pressed", String(state.view === "board"));
+  $("btn-list").setAttribute("aria-pressed", String(state.view === "list"));
+}
+function renderBoard(tickets, counts) {
+  const board = h("div", { class: "board" });
+  for (const s of STATUSES) {
+    const col = h("div", { class: "col" }, h("h3", {}, s + " (" + (counts[s] || 0) + ")"));
+    const mine = tickets.filter((t) => t.status === s);
+    if (!mine.length) col.append(h("div", { class: "muted" }, "No tickets"));
+    for (const t of mine) {
+      col.append(h("div", { class: "card" + (t.id === state.selected ? " sel" : ""), tabindex: "0", onclick: () => selectTicket(t.id) },
+        h("div", { class: "t" }, t.title), h("div", {}, t.company),
+        h("div", { class: "muted" }, [t.location, t.score != null ? "score " + t.score : ""].filter(Boolean).join(" - ")),
+        h("div", {}, linkNode(t.link))));
+    }
+    board.append(col);
+  }
+  return board;
+}
+const COLUMNS = [["company", "Company"], ["title", "Title"], ["location", "Location"], ["status", "Status"], ["score", "Score"], ["resume", "Resume"], ["applied", "Applied"], ["updated", "Updated"]];
+function renderList(tickets) {
+  const head = h("tr", {});
+  for (const [key, label] of COLUMNS) {
+    const arrow = state.sort === key ? (state.dir === "asc" ? " ▲" : " ▼") : "";
+    head.append(h("th", { class: "sortable", scope: "col", onclick: () => {
+      if (state.sort === key) state.dir = state.dir === "asc" ? "desc" : "asc"; else { state.sort = key; state.dir = "asc"; }
+      mirrorUrl(); loadTickets();
+    } }, label + arrow));
+  }
+  head.append(h("th", { scope: "col" }, "Link"));
+  const body = h("tbody", {});
+  for (const t of tickets) {
+    body.append(h("tr", { class: "row" + (t.id === state.selected ? " sel" : ""), onclick: () => selectTicket(t.id) },
+      h("td", {}, t.company), h("td", {}, t.title), h("td", {}, t.location), h("td", {}, t.status),
+      h("td", {}, t.score == null ? "" : t.score), h("td", {}, t.resume_name || ""),
+      h("td", {}, t.applied_date || ""), h("td", {}, (t.updated_at || "").slice(0, 10)), h("td", {}, linkNode(t.link))));
+  }
+  return h("table", {}, h("thead", {}, head), body);
+}
+function clearFilters() {
+  for (const id of Object.values(FILTER_FIELDS)) $(id).value = "";
+  mirrorUrl(); loadTickets();
+}
+
+/* ---------- detail panel ---------- */
+function selectTicket(id) { state.selected = id; renderTickets(); refreshDetail(true); }
+function detailDirty() {
+  const a = document.activeElement;
+  if (a && $("detail").contains(a) && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return true;
+  return [...$("detail").querySelectorAll("textarea")].some((t) => t.value !== t.defaultValue);
+}
+async function refreshDetail(force) {
+  const box = $("detail");
+  if (state.selected == null) return box.classList.add("hidden");
+  if (!force && detailDirty()) return;
+  try {
+    const t = await api("GET", "/api/tickets/" + state.selected);
+    if (!force && detailDirty()) return;
+    renderDetail(t);
+  } catch (e) {
+    if (e.status === 404) { toast("This ticket changed. Reloaded."); state.selected = null; box.classList.add("hidden"); loadTickets(); }
+    else if (force) toast(e.message, true);
+  }
+}
+function renderDetail(t) {
+  const box = $("detail");
+  box.classList.remove("hidden");
+  box.replaceChildren();
+  const msg = h("div", { class: "msg", role: "alert" });
+  const status = h("select", { id: "d-status" }, STATUSES.map((s) => h("option", { value: s, selected: s === t.status }, s)));
+  const reason = h("input", { id: "d-reason", type: "text" });
+  const override = h("input", { id: "d-override", type: "text" });
+  const overrideRow = h("div", { class: "hidden" }, h("label", { for: "d-override" }, "Override reason"), override);
+  const notes = h("textarea", { id: "d-notes", rows: 4 }, t.notes || "");
+  const referral = h("textarea", { id: "d-referral", rows: 3 }, t.referral_note || "");
+  const saveNote = (kind, area) => async () => {
+    msg.textContent = "";
+    try { await api("POST", "/api/tickets/" + t.id + "/" + kind, { text: area.value }); area.defaultValue = area.value; toast(kind === "note" ? "Note saved." : "Referral note saved."); refreshDetail(true); }
+    catch (e) { msg.textContent = e.message; }
+  };
+  const change = async () => {
+    msg.textContent = "";
+    const body = { status: status.value, reason: reason.value, override_reason: overrideRow.classList.contains("hidden") ? null : override.value };
+    try {
+      const r = await api("POST", "/api/tickets/" + t.id + "/status", body);
+      toast(r.message); loadTickets(); refreshDetail(true);
+    } catch (e) {
+      if (e.status === 409) { msg.textContent = e.message; overrideRow.classList.remove("hidden"); }
+      else if (e.status === 404) { toast("This ticket changed. Reloaded."); state.selected = null; box.classList.add("hidden"); loadTickets(); }
+      else msg.textContent = e.message;
+    }
+  };
+  box.append(
+    h("h2", {}, t.title), h("div", {}, t.company + (t.location ? " - " + t.location : "")),
+    h("div", { class: "muted" }, "Status: " + t.status + (t.status_reason ? " (" + t.status_reason + ")" : "") + (t.score != null ? " - score " + t.score : "")),
+    h("div", {}, linkNode(t.link)),
+    t.blocked && h("div", { class: "panel" }, h("strong", {}, "Blocked: "), t.blocked.reason, h("div", {}, "Next step: " + t.blocked.next_step), t.blocked.question && h("div", {}, "Question: " + t.blocked.question)),
+    h("label", { for: "d-status" }, "Status"), status,
+    h("label", { for: "d-reason" }, "Reason"), reason,
+    overrideRow,
+    h("p", {}, h("button", { class: "primary", onclick: change }, "Change status")),
+    msg,
+    h("label", { for: "d-notes" }, "Notes"), notes,
+    h("p", {}, h("button", { onclick: saveNote("note", notes) }, "Save note")),
+    h("label", { for: "d-referral" }, "Referral note"), referral,
+    h("p", {}, h("button", { onclick: saveNote("referral-note", referral) }, "Save referral note")),
+    h("strong", {}, "History"),
+    h("ul", { class: "hist" }, t.history.map((e) => h("li", {}, (e.time || "") + " - " + e.status + " - " + e.actor + (e.reason ? " - " + e.reason : "")))));
+}
+
+/* ---------- blocked ---------- */
+async function loadBlocked() {
+  const root = $("page-blocked");
+  try {
+    state.blocked = await api("GET", "/api/blocked");
+    updateBlockedTab(state.blocked.count);
+  } catch (e) { root.replaceChildren(h("p", { class: "msg" }, e.message)); return; }
+  const typing = root.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (state.tab === "blocked" && !typing) renderBlocked();
+}
+function renderBlocked() {
+  const root = $("page-blocked");
+  root.replaceChildren(h("h2", {}, "Blocked for you (" + state.blocked.count + ")"));
+  if (!state.blocked.items.length) return root.append(h("p", {}, "Nothing is blocked. You're all caught up."));
+  for (const it of state.blocked.items) {
+    const msg = h("div", { class: "msg", role: "alert" });
+    const panel = h("div", { class: "panel" },
+      h("strong", {}, it.company + " - " + it.title),
+      h("div", {}, "Reason: " + it.reason), h("div", {}, "Next step: " + it.next_step),
+      h("div", {}, linkNode(it.link)));
+    if (it.queue_item_id != null && it.question) {
+      const box = h("input", { type: "text", "aria-label": "Answer for " + it.title, style: "width:60%" });
+      panel.append(h("div", {}, "Question: " + it.question),
+        h("div", {}, box, " ", h("button", { class: "primary", onclick: async () => {
+          try { const r = await api("POST", "/api/queue/" + it.queue_item_id + "/answer", { answer: box.value }); toast(r.message); loadBlocked(); loadTickets(); }
+          catch (e) { msg.textContent = e.message; }
+        } }, "Save answer")), msg);
+    }
+    root.append(panel);
+  }
+}
+
+/* ---------- answers ---------- */
+async function loadAnswers() {
+  try { state.answers = (await api("GET", "/api/answers")).answers; renderAnswers(); }
+  catch (e) { $("page-answers").replaceChildren(h("p", { class: "msg" }, e.message)); }
+}
+function renderAnswers() {
+  const root = $("page-answers");
+  root.replaceChildren();
+  const list = state.answers;
+  if (!list.length) return root.append(h("p", {}, "No stored answers yet. Answers you give are saved here."));
+  const msg = h("div", { class: "msg", role: "alert" });
+  const mergeBtn = h("button", { disabled: state.mergeIds.size !== 2, onclick: () => renderMerge(list.filter((a) => state.mergeIds.has(a.id))) }, "Merge selected");
+  root.append(h("div", { class: "bar" }, mergeBtn), msg);
+  const body = h("tbody", {});
+  for (const a of list) {
+    if (state.editingAnswer === a.id) {
+      const q = h("input", { type: "text", value: a.question, "aria-label": "Question", style: "width:100%" });
+      const ans = h("input", { type: "text", value: a.answer, "aria-label": "Answer", style: "width:100%" });
+      body.append(h("tr", {}, h("td", {}), h("td", {}, q), h("td", {}, ans), h("td", {}, a.source), h("td", {}, a.last_used_at || ""),
+        h("td", {}, h("button", { class: "primary", onclick: async () => {
+          try { await api("PUT", "/api/answers/" + a.id, { question: q.value, answer: ans.value }); toast("Answer saved."); state.editingAnswer = null; loadAnswers(); }
+          catch (e) { msg.textContent = e.message; }
+        } }, "Save"), " ", h("button", { onclick: () => { state.editingAnswer = null; renderAnswers(); } }, "Cancel"))));
+      continue;
+    }
+    const check = h("input", { type: "checkbox", "aria-label": "Select answer " + a.id, checked: state.mergeIds.has(a.id), onchange: (e) => {
+      if (e.target.checked) state.mergeIds.add(a.id); else state.mergeIds.delete(a.id);
+      mergeBtn.disabled = state.mergeIds.size !== 2;
+    } });
+    body.append(h("tr", {}, h("td", {}, check), h("td", {}, a.question), h("td", {}, a.answer), h("td", {}, a.source), h("td", {}, a.last_used_at || ""),
+      h("td", {}, h("button", { onclick: () => { state.editingAnswer = a.id; renderAnswers(); } }, "Edit"), " ",
+        h("button", { onclick: async () => {
+          if (!confirm("Delete this answer? This cannot be undone.")) return;
+          try { await api("DELETE", "/api/answers/" + a.id); state.mergeIds.delete(a.id); toast("Answer deleted."); loadAnswers(); }
+          catch (e) { msg.textContent = e.message; }
+        } }, "Delete"))));
+  }
+  root.append(h("table", {}, h("thead", {}, h("tr", {}, ["", "Question", "Answer", "Source", "Last used", ""].map((x) => h("th", { scope: "col" }, x)))), body));
+}
+function renderMerge(pair) {
+  const [a, b] = pair;
+  const root = $("page-answers");
+  const msg = h("div", { class: "msg", role: "alert" });
+  const pick = (name, label, vals) => h("fieldset", {}, h("legend", {}, label),
+    vals.map(([v, text], i) => h("label", { style: "display:block" }, h("input", { type: "radio", name, value: v, checked: i === 0 }), " " + text)));
+  const form = h("div", { class: "panel" }, h("h3", {}, "Merge answers"),
+    pick("mq", "Question to keep", [["a", a.question], ["b", b.question]]),
+    pick("ma", "Answer to keep", [["a", a.answer], ["b", b.answer]]),
+    h("button", { class: "primary", onclick: async () => {
+      if (!confirm("Merge these two answers into one? The other entry will be deleted.")) return;
+      const q = form.querySelector("input[name=mq]:checked").value === "a" ? a : b;
+      const n = form.querySelector("input[name=ma]:checked").value === "a" ? a : b;
+      try { await api("POST", "/api/answers/merge", { keep_id: a.id, remove_id: b.id, question: q.question, answer: n.answer }); toast("Answers merged."); state.mergeIds.clear(); loadAnswers(); }
+      catch (e) { msg.textContent = e.message; }
+    } }, "Merge"), " ", h("button", { onclick: renderAnswers }, "Cancel"), msg);
+  root.prepend(form);
+}
+
+/* ---------- resumes ---------- */
+async function loadResumes() {
+  try { state.resumes = (await api("GET", "/api/resumes")).resumes; fillResumeFilter(); renderResumes(); }
+  catch (e) { $("page-resumes").replaceChildren(h("p", { class: "msg" }, e.message)); }
+}
+function fillResumeFilter() {
+  const sel = $("f-resume"), keep = sel.value || new URLSearchParams(location.search).get("resume_id") || "";
+  sel.replaceChildren(h("option", { value: "" }, "Any"), state.resumes.map((r) => h("option", { value: String(r.id) }, r.name)));
+  sel.value = keep;
+}
+function renderResumes() {
+  const root = $("page-resumes");
+  root.replaceChildren();
+  if (!state.resumes.length) return root.append(h("p", {}, "No resumes yet. Add one with 'hireember resume add'."));
+  const msg = h("div", { class: "msg", role: "alert" });
+  const body = h("tbody", {});
+  for (const r of state.resumes) {
+    if (state.editingResume === r.id) {
+      const name = h("input", { type: "text", value: r.name, "aria-label": "Name" });
+      const tags = h("input", { type: "text", value: r.tags.join(", "), "aria-label": "Tags" });
+      body.append(h("tr", {}, h("td", {}, name), h("td", {}, tags), h("td", {}, r.pinned ? "Yes" : "No"), h("td", {}, r.file_name),
+        h("td", {}, h("button", { class: "primary", onclick: async () => {
+          try { await api("PUT", "/api/resumes/" + r.id, { name: name.value, tags: tags.value }); toast("Resume saved."); state.editingResume = null; loadResumes(); }
+          catch (e) { msg.textContent = e.message; }
+        } }, "Save"), " ", h("button", { onclick: () => { state.editingResume = null; renderResumes(); } }, "Cancel"))));
+      continue;
+    }
+    const file = h("input", { type: "file", accept: ".pdf,.txt", class: "hidden", onchange: async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try { await api("POST", "/api/resumes/" + r.id + "/file", f, { "X-Filename": f.name }); toast("Resume file replaced."); loadResumes(); }
+      catch (err) { msg.textContent = err.message; }
+    } });
+    body.append(h("tr", {}, h("td", {}, r.name), h("td", {}, r.tags.join(", ")), h("td", {}, r.pinned ? "Yes" : "No"), h("td", {}, r.file_name),
+      h("td", {}, h("button", { onclick: () => { state.editingResume = r.id; renderResumes(); } }, "Edit"), " ",
+        h("button", { onclick: () => file.click() }, "Replace file"), file)));
+  }
+  root.append(msg, h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Tags", "Pinned", "File", ""].map((x) => h("th", { scope: "col" }, x)))), body));
+}
+
+/* ---------- tabs, polling, startup ---------- */
+function showTab(name) {
+  state.tab = name;
+  for (const t of ["tickets", "blocked", "answers", "resumes"]) {
+    $("tab-" + t).setAttribute("aria-selected", String(t === name));
+    $("page-" + t).classList.toggle("hidden", t !== name);
+  }
+  if (name === "blocked") loadBlocked();
+  if (name === "answers") loadAnswers();
+  if (name === "resumes") loadResumes();
+  if (name === "tickets") loadTickets();
+  mirrorUrl();
+}
+async function poll() {
+  try {
+    const r = await api("GET", "/api/updates" + (state.cursor == null ? "" : "?after=" + state.cursor));
+    setLive(true);
+    const first = state.cursor == null;
+    state.cursor = r.cursor;
+    if (!first && r.changes.length) {
+      loadTickets();
+      if (state.tab === "blocked") loadBlocked(); else if (state.blocked) loadBlocked();
+    }
+  } catch (e) { setLive(false); }
+}
+async function init() {
+  readUrl();
+  for (const t of ["tickets", "blocked", "answers", "resumes"]) $("tab-" + t).addEventListener("click", () => showTab(t));
+  $("btn-board").addEventListener("click", () => { state.view = "board"; mirrorUrl(); renderTickets(); });
+  $("btn-list").addEventListener("click", () => { state.view = "list"; mirrorUrl(); renderTickets(); });
+  $("btn-clear").addEventListener("click", clearFilters);
+  let timer = null;
+  for (const id of Object.values(FILTER_FIELDS)) {
+    $(id).addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { mirrorUrl(); loadTickets(); }, 250); });
+    $(id).addEventListener("change", () => { mirrorUrl(); loadTickets(); });
+  }
+  await loadResumes();
+  showTab(state.tab);
+  loadBlocked();
+  poll();
+  setInterval(poll, 2000);
+}
+init();
+</script>
+</body>
+</html>

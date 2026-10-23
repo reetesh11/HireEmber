@@ -52,6 +52,16 @@ class OverrideReasonError(TicketError):
         super().__init__("An override needs a reason.")
 
 
+class NoteTooLongError(TicketError):
+    """A note is longer than MAX_NOTE_LENGTH characters."""
+
+    def __init__(self):
+        super().__init__(f"Note is too long (max {MAX_NOTE_LENGTH:,} characters).")
+
+
+MAX_NOTE_LENGTH = 10_000
+_NOTE_COLUMNS = {"note": "notes", "referral note": "referral_note"}
+
 _PUNCT = re.compile(r"[^\w\s]|_", re.UNICODE)
 
 
@@ -325,6 +335,25 @@ def set_status(conn: sqlite3.Connection, ticket_id: int, status: str, *,
             conn.commit()
             raise DuplicateTicketError(ticket_id, other)
     _write_status(conn, ticket_id, status, actor, reason, link, link_kind)
+    conn.commit()
+
+
+def set_note(conn: sqlite3.Connection, ticket_id: int, text: str, *, kind: str = "note",
+             actor: str = "user") -> None:
+    """Save a note or referral note on a ticket and write one history event.
+
+    The status and ``updated_at`` stay as they are; an empty text clears the note.
+    """
+    if kind not in _NOTE_COLUMNS:
+        raise ValueError(f"Invalid note kind {kind!r}. Allowed kinds: {', '.join(_NOTE_COLUMNS)}.")
+    if actor not in _ACTORS:
+        raise ValueError(f"Invalid actor {actor!r}. Allowed actors: {', '.join(_ACTORS)}.")
+    ticket = get_ticket(conn, ticket_id)
+    text = text or ""
+    if len(text) > MAX_NOTE_LENGTH:
+        raise NoteTooLongError()
+    conn.execute(f"UPDATE tickets SET {_NOTE_COLUMNS[kind]} = ? WHERE id = ?", (text, ticket_id))
+    _add_event(conn, ticket_id, ticket["status"], actor, kind)
     conn.commit()
 
 
