@@ -117,7 +117,7 @@ def test_export_csv_header_and_rows(conn, tmp_path):
     runs_header = "id,kind,trigger,status,started_at,ended_at,found,scored,skipped," \
                   "tickets_created,tickets_blocked"
     assert (out / "runs.csv").read_text(encoding="utf-8").strip() == runs_header
-    assert (out / "tickets.csv").read_text(encoding="utf-8") == tickets_csv(conn)
+    assert open(out / "tickets.csv", newline="", encoding="utf-8").read() == tickets_csv(conn)
 
     make_ticket(conn, "t1")
     execute_run("manual", stages=Recorder(found=3, scored=2, skipped=1).stages(), conn=conn,
@@ -128,7 +128,7 @@ def test_export_csv_header_and_rows(conn, tmp_path):
     rows = list(csv.DictReader(io.StringIO((out / "runs.csv").read_text(encoding="utf-8"))))
     assert [r["found"] for r in rows] == ["3", "8"]
     assert [r["trigger"] for r in rows] == ["manual", "scheduled"]
-    assert (out / "tickets.csv").read_text(encoding="utf-8") == tickets_csv(conn)
+    assert open(out / "tickets.csv", newline="", encoding="utf-8").read() == tickets_csv(conn)
 
 
 def test_export_bad_directory_raises_and_writes_nothing(conn, tmp_path):
