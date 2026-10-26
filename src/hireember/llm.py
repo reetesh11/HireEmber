@@ -15,6 +15,8 @@ import time
 
 import httpx
 
+from hireember import usage
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -142,7 +144,10 @@ class LLMClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        meta = data.get("usageMetadata") or {}
+        usage.note_call(self.model, meta.get("promptTokenCount"), meta.get("candidatesTokenCount"))
+        return text
 
     # -- OpenAI-compat API --------------------------------------------------
 
@@ -175,7 +180,10 @@ class LLMClient:
         if resp.status_code == 403 and self._is_gemini:
             raise _GeminiCompatForbidden(resp)
 
-        return self._handle_compat_response(resp)
+        text = self._handle_compat_response(resp)
+        counts = resp.json().get("usage") or {}
+        usage.note_call(self.model, counts.get("prompt_tokens"), counts.get("completion_tokens"))
+        return text
 
     @staticmethod
     def _handle_compat_response(resp: httpx.Response) -> str:
