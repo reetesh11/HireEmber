@@ -47,6 +47,22 @@ hireember apply --dry-run   # fill forms without submitting
 
 ---
 
+## Setup to your first scored role
+
+You do not edit any code. You need Python 3.11 or later and a model API key (Gemini has a free tier).
+
+1. Install: `pip install hireember`.
+2. Run `hireember init`. It asks for your resume (.txt or .pdf), your profile, your job search and your API key.
+3. Run `hireember doctor` and fix anything it reports as missing.
+4. Run the discovery stage: `hireember run discover`. It searches the companies and job boards you set up.
+5. Run the scoring stage: `hireember run score`. Each job gets a score from 1 to 10 and a short reason, and a ticket.
+6. Open the dashboard with `hireember dashboard`, then open `http://127.0.0.1:8765`. Your first scored role is on the board, with its score and reason.
+
+Notes: the safety rules are in [docs/safety.md](docs/safety.md). Each run and each apply attempt writes a log
+file that the dashboard links to.
+
+---
+
 ## Two Paths
 
 ### Full Pipeline (recommended)
@@ -209,8 +225,9 @@ Runs fire only while `hireember scheduler` is running. It is a foreground proces
 # macOS launchd: a LaunchAgent with ProgramArguments ["hireember", "scheduler"] and RunAtLoad true
 ```
 
-If the machine was asleep or off at a scheduled time, that run is missed. When the scheduler is next
-started it launches one run (never one per missed time), so a missed run starts at the next start.
+Schedules do not fire while the machine is asleep or off. A run missed that way is not lost: when
+the scheduler is next started it launches one run (never one per missed time), so a missed run
+starts at the next start after the machine wakes.
 `hireember scheduler --once` checks once and exits, for use from cron or launchd directly.
 
 Scheduled applying is off by default. `hireember schedule --apply on` lets scheduled runs apply to

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Release hardening** - a log file per run and per apply attempt (linked from the dashboard,
+  pruned after 90 days), model and token totals per ticket stage, a README setup path,
+  `docs/safety.md`, and a requirement-to-test traceability table covering every ID.
 - **Local web dashboard** - `hireember dashboard` now serves a local-only (127.0.0.1) web dashboard
   with a ticket board and list, filters, sorting, blocked queue, status changes, notes and
   referral notes, answer and resume editing, live updates and CSV export. It replaces the static

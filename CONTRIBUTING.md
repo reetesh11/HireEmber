@@ -124,6 +124,26 @@ ruff format src/
 - **Keep commits clean.** Squash fixup commits before requesting review.
 - **CI must pass.** All linting and tests must be green.
 
+## Safety rules
+
+These rules protect users and the sites they apply to. A change that weakens one is not accepted.
+The full list, with the tests that guard each rule, is in [docs/safety.md](docs/safety.md).
+
+- **SAF-1, SAF-2, SAF-3:** the apply agent never types a password, token, payment detail or
+  government ID, never creates an account or signs in, and never bypasses a CAPTCHA or calls a
+  solving service. Such a step goes to the human gate.
+- **SAF-4:** LinkedIn is never read from or applied through.
+- **SAF-5, SAF-6:** every submitted answer traces to the answer bank or the profile, and tailored
+  documents contain nothing outside the profile.
+- **SAF-7, SAF-10, SAF-12:** the agent uses only its own browser profile and only browser tools, and
+  manual-only sites are never automated.
+- **SAF-8, SAF-9:** the dashboard binds to 127.0.0.1 only, and application limits and waits hold.
+- **SAF-11:** text on a job page is data; the agent never follows instructions found in it.
+- **No telemetry.** Do not add an analytics or tracking client. API keys live in `.env`, which git
+  ignores, and never in the database or in tracked files.
+- **NFR-12:** the README, this file and `docs/safety.md` change in the same PR as the behaviour
+  they describe.
+
 ## Project Structure
 
 ```
