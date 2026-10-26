@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from hireember import tickets
+from hireember import logs, tickets
 
 
 def start_attempt(conn: sqlite3.Connection, ticket_id: int) -> int:
@@ -21,6 +21,14 @@ def log_step(conn: sqlite3.Connection, ticket_id: int, attempt: int, kind: str,
         (ticket_id, attempt, tickets._now(), kind, field, source, detail),
     )
     conn.commit()
+    parts = [kind]
+    if field:
+        parts.append(f"field={field}")
+    if source:
+        parts.append(f"source={source}")
+    if detail:
+        parts.append(detail)
+    logs.write_line(logs.attempt_log_path(ticket_id, attempt), " | ".join(parts))
 
 
 def get_log(conn: sqlite3.Connection, ticket_id: int) -> list[dict]:
