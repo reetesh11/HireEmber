@@ -22,7 +22,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
-from hireember import config, tickets
+from hireember import config, tickets, usage
 from hireember.database import get_connection
 from hireember.apply import chrome as chrome_mod
 from hireember.apply import prompt as prompt_mod
@@ -515,6 +515,11 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             _claude_procs.pop(worker_id, None)
         if proc is not None and proc.poll() is None:
             _kill_process_tree(proc.pid)
+        try:
+            usage.record(session.conn, session.ticket_id, "applying", model,
+                         stats.get("input_tokens", 0), stats.get("output_tokens", 0))
+        except Exception:  # noqa: BLE001 - usage is informational and must not change the outcome
+            pass
 
 
 # ---------------------------------------------------------------------------

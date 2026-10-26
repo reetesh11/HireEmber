@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from hireember import tickets
+from hireember import logs, tickets
 
 LOCK_MAX_AGE = timedelta(hours=24)
 DEFAULT_APPLY_LIMIT = 25
@@ -157,6 +157,8 @@ def log_event(conn: sqlite3.Connection, run_id: int | None, source: str, message
     conn.execute("INSERT INTO run_log (run_id, time, source, level, message) VALUES (?, ?, ?, ?, ?)",
                  (run_id, _utcnow().isoformat(), source, level, message))
     conn.commit()
+    if run_id is not None:
+        logs.write_line(logs.run_log_path(run_id), f"{source}: {message}", level)
 
 
 def get_run_log(conn: sqlite3.Connection, run_id: int) -> list[dict]:
@@ -230,6 +232,8 @@ def execute_run(trigger: str = "manual", *, stages: Stages | None = None, apply:
         run_id = cur.lastrowid
         conn.execute("UPDATE run_lock SET run_id = ? WHERE token = ?", (run_id, token))
         conn.commit()
+        logs.prune_logs()
+        logs.write_line(logs.run_log_path(run_id), f"run {run_id} started (trigger: {trigger})")
         failed = False
 
         def call(name: str, fn: Callable[..., dict], *args) -> dict:
@@ -263,6 +267,8 @@ def execute_run(trigger: str = "manual", *, stages: Stages | None = None, apply:
                  counts["skipped"], counts["created"], counts["blocked"],
                  f"found {counts['found']}, scored {counts['scored']}", run_id))
             conn.commit()
+            logs.write_line(logs.run_log_path(run_id),
+                            f"run {run_id} {status}: found {counts['found']}, scored {counts['scored']}")
         release_lock(conn, token)
     return get_run(conn, run_id)  # type: ignore[arg-type]
 

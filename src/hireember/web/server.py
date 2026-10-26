@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from hireember import answers, database, resumes, runs, tickets
+from hireember import answers, database, logs, resumes, runs, tickets
 from hireember.web import queries
 
 DEFAULT_HOST = "127.0.0.1"
@@ -96,6 +96,8 @@ def _ticket_detail(conn, ticket_id: int):
             i = item[0]
             blocked = {k: i[k] for k in ("reason", "next_step", "question", "queue_item_id")}
     detail["blocked"] = blocked
+    detail["logs"] = queries.ticket_logs(conn, ticket_id)
+    detail["usage"] = queries.ticket_usage(conn, ticket_id)
     return detail
 
 
@@ -276,7 +278,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, queries.runs_html(conn, fragment).encode("utf-8"),
                        "text/html; charset=utf-8")
         elif path == "/api/runs":
-            self._json(200, {"runs": [asdict(r) for r in runs.list_runs(conn)]})
+            self._json(200, {"runs": [
+                {**asdict(r), "log_url": f"/logs/runs/{r.id}",
+                 "log_available": logs.run_log_path(r.id).is_file()}
+                for r in runs.list_runs(conn)]})
+        elif path.startswith("/logs/"):
+            self._log_file(path)
+        elif m := re.fullmatch(r"/tickets/(\d+)", path):
+            fragment = (params.get("fragment") or [""])[0] not in ("", "0")
+            try:
+                tickets.get_ticket(conn, int(m.group(1)))
+            except tickets.TicketNotFoundError as exc:
+                raise ApiError(404, str(exc), "not_found") from None
+            self._send(200, queries.ticket_extras_html(conn, int(m.group(1)), fragment).encode("utf-8"),
+                       "text/html; charset=utf-8")
         elif path == "/api/stages/status":
             last = runs.last_stage_result(conn)
             self._json(200, {"running": runs.is_running(conn),
@@ -288,6 +303,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _resumes(conn))
         else:
             raise ApiError(404, "Not found.", "not_found")
+
+    def _log_file(self, path: str) -> None:
+        if m := re.fullmatch(r"/logs/runs/(\d+)", path):
+            target = logs.run_log_path(int(m.group(1)))
+        elif m := re.fullmatch(r"/logs/tickets/(\d+)/(\d+)", path):
+            target = logs.attempt_log_path(int(m.group(1)), int(m.group(2)))
+        else:
+            raise ApiError(404, "Log not found.", "not_found")
+        text = logs.read_log(target)
+        if text is None:
+            raise ApiError(404, "Log not found.", "not_found")
+        self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
 
     def _route_write(self, conn, method: str, path: str) -> None:
         try:

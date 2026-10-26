@@ -212,9 +212,10 @@ def test_api_runs(web):
     status, data = client.get("/api/runs")
     assert status == 200
     assert [r["found"] for r in data["runs"]] == [6, 5]
+    # phase 6 adds log_url and log_available to each run
     assert set(data["runs"][0]) == {"id", "kind", "trigger", "status", "started_at", "ended_at",
                                     "found", "scored", "skipped", "tickets_created",
-                                    "tickets_blocked"}
+                                    "tickets_blocked", "log_url", "log_available"}
 
 
 def test_index_has_runs_tab_and_stage_buttons():

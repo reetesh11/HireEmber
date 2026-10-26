@@ -177,6 +177,24 @@ def ensure_phase5_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_STAGE_USAGE = """CREATE TABLE IF NOT EXISTS stage_usage (
+    ticket_id INTEGER NOT NULL,
+    stage TEXT NOT NULL,
+    model TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT,
+    PRIMARY KEY (ticket_id, stage)
+)"""
+
+
+def ensure_phase6_schema(conn: sqlite3.Connection) -> None:
+    """Add the per-ticket stage usage table (idempotent, additive)."""
+    conn.execute(_STAGE_USAGE)
+    conn.commit()
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     """Create the eight new tables and indexes (idempotent), then the phase 3 and 5 additions."""
     for stmt in _SCHEMA.split(";"):
@@ -185,6 +203,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     ensure_phase3_schema(conn)
     ensure_phase5_schema(conn)
+    ensure_phase6_schema(conn)
 
 
 def backfill_jobs(conn: sqlite3.Connection) -> None:
