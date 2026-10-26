@@ -1,0 +1,23 @@
+{
+  "acceptance": [
+    {"criterion": "AC-1", "file": "tests/acceptance/test_p6_logs.py", "tests": 14, "expect_red": true,
+     "description": "hireember.logs paths, line writer, redaction, run log and attempt log files, unwritable folder"},
+    {"criterion": "AC-1", "file": "tests/acceptance/test_p6_dashboard_logs.py", "tests": 25, "expect_red": true,
+     "description": "log URLs serve plain text, 404 for bad ids and paths, runs view and ticket page links, Log removed, API fields"},
+    {"criterion": "AC-2", "file": "tests/acceptance/test_p6_usage.py", "tests": 23, "expect_red": true,
+     "description": "usage module, collector, LLM client usage parsing, scoring/tailoring/applying wiring, Model and tokens table and API usage"},
+    {"criterion": "AC-3", "file": "tests/acceptance/test_p6_keys_telemetry.py", "tests": 5, "expect_red": false,
+     "description": "key scan of tracked files and seeded database, scanner self-checks, .env ignored, .env.example not (already true, must stay true)"},
+    {"criterion": "AC-6", "file": "tests/acceptance/test_p6_keys_telemetry.py", "tests": 2, "expect_red": false,
+     "description": "test_no_telemetry_client_is_imported_or_called_in_the_package and test_pyproject_lists_no_telemetry_dependency (already true, must stay true)"},
+    {"criterion": "AC-4", "file": "tests/acceptance/test_p6_traceability.py", "tests": 5, "expect_red": true,
+     "description": "every FR/SAF/NFR ID mapped, exempt or known exception; no duplicates or unknown IDs; files and test names exist; parked-fixes entries"},
+    {"criterion": "AC-5", "file": "tests/acceptance/test_p6_docs.py", "tests": 6, "expect_red": true,
+     "description": "README setup section and sleep sentence; CONTRIBUTING Safety rules and docs/safety.md cover section 7 phrases and SAF-1..12"},
+    {"criterion": "AC-7", "file": "tests/acceptance/test_p6_logs.py", "tests": 3, "expect_red": true,
+     "description": "prune at 90 days (91 deleted, 89 kept, other files left), max_age_days, prune on run start (same file as AC-1 logs tests)"},
+    {"criterion": "AC-1", "file": "tests/acceptance/test_p6_unchanged.py", "tests": 9, "expect_red": false,
+     "description": "neighbouring behaviour that must not change: /api/runs and ticket API fields, empty runs page, run_log DB rows, LLM chat return type, attempt_log rows, runs and attempts continue when the log folder is unwritable"}
+  ],
+  "untestable": []
+}

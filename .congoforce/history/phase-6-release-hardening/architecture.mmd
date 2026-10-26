@@ -1,0 +1,16 @@
+flowchart LR
+  runs[runs.py execute_run]:::changed --> logs[logs.py]:::new
+  attempts[apply/attempts.py log_step]:::changed --> logs
+  logs --> files[(HIREEMBER_DIR/logs)]
+  llm[llm.py LLMClient]:::changed -->|note_call| usage[usage.py]:::new
+  gating[gating.py]:::changed -->|collect, record| usage
+  launcher[apply/launcher.py run_job]:::changed -->|record| usage
+  usage --> db[(stage_usage table)]:::new
+  mig[migration.py]:::changed --> db
+  server[web/server.py]:::changed --> logs
+  server --> queries[web/queries.py]:::changed
+  queries --> usage
+  queries --> logs
+  ui[web/static/index.html]:::changed -->|GET /tickets/id?fragment=1| server
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
