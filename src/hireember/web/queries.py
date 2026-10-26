@@ -9,6 +9,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
+from hireember import logs
 from hireember.tickets import ALLOWED_STATUSES
 
 NO_LINK = "No link available"
@@ -256,6 +257,13 @@ _RUN_COLUMNS = (("Started", "started_at"), ("Trigger", "trigger"), ("Status", "s
                 ("Tickets created", "tickets_created"), ("Tickets blocked", "tickets_blocked"))
 
 
+def run_log_link_html(run_id: int) -> str:
+    """A link to the run's log file, or "Log removed" when the file is gone."""
+    if logs.run_log_path(run_id).is_file():
+        return f'<a href="/logs/runs/{int(run_id)}">Log</a>'
+    return "Log removed"
+
+
 def runs_html(conn: sqlite3.Connection, fragment: bool = False, limit: int = 50) -> str:
     """The runs summary as server-rendered HTML (every value escaped); a full page unless fragment."""
     from dataclasses import asdict
@@ -266,8 +274,10 @@ def runs_html(conn: sqlite3.Connection, fragment: bool = False, limit: int = 50)
     runs = [asdict(r) for r in list_runs(conn, limit)]
     if runs:
         head = "".join(f'<th scope="col">{escape(label)}</th>' for label, _ in _RUN_COLUMNS)
+        head += '<th scope="col">Log</th>'
         rows = "".join(
-            "<tr>" + "".join(f"<td>{escape(str(r[key]))}</td>" for _, key in _RUN_COLUMNS) + "</tr>"
+            "<tr>" + "".join(f"<td>{escape(str(r[key]))}</td>" for _, key in _RUN_COLUMNS)
+            + f"<td>{run_log_link_html(r['id'])}</td></tr>"
             for r in runs)
         body = f"<table><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>"
     else:
@@ -277,3 +287,54 @@ def runs_html(conn: sqlite3.Connection, fragment: bool = False, limit: int = 50)
         return section
     return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>HireEmber runs</title>'
             f"</head><body>{section}</body></html>")
+
+
+# -- ticket page extras ---------------------------------------------------------
+
+USAGE_LABELS = (("scoring", "Scoring"), ("tailoring", "Tailoring"), ("applying", "Applying"))
+
+
+def ticket_logs(conn: sqlite3.Connection, ticket_id: int) -> list[dict]:
+    """Attempt logs for a ticket, newest first, with whether each file still exists."""
+    rows = conn.execute("SELECT DISTINCT attempt FROM attempt_log WHERE ticket_id = ? "
+                        "ORDER BY attempt DESC", (ticket_id,)).fetchall()
+    return [{"attempt": r[0], "url": f"/logs/tickets/{ticket_id}/{r[0]}",
+             "available": logs.attempt_log_path(ticket_id, r[0]).is_file()} for r in rows]
+
+
+def ticket_usage(conn: sqlite3.Connection, ticket_id: int) -> dict:
+    return {"scoring": None, "tailoring": None, "applying": None}
+
+
+def ticket_extras_html(conn: sqlite3.Connection, ticket_id: int, fragment: bool = False) -> str:
+    """The ticket page's Logs and Model and tokens sections (every value escaped)."""
+    from html import escape
+
+    items = []
+    for entry in ticket_logs(conn, ticket_id):
+        n = entry["attempt"]
+        if entry["available"]:
+            items.append(f'<li><a href="{entry["url"]}">Attempt {n} log</a></li>')
+        else:
+            items.append(f"<li>Attempt {n}: Log removed</li>")
+    logs_html = f"<ul>{''.join(items)}</ul>" if items else "<p>No attempt log yet.</p>"
+    usage = ticket_usage(conn, ticket_id)
+    rows = []
+    for key, label in USAGE_LABELS:
+        u = usage.get(key)
+        if u is None:
+            cells = ["-"] * 4
+        else:
+            cells = [u["model"], f"{u['input_tokens']:,}", f"{u['output_tokens']:,}",
+                     f"{u['total_tokens']:,}"]
+        rows.append("<tr>" + "".join(f"<td>{escape(c)}</td>" for c in [label, *cells]) + "</tr>")
+    head = "".join(f'<th scope="col">{h}</th>' for h in
+                   ("Stage", "Model", "Input tokens", "Output tokens", "Total tokens"))
+    section = ('<section id="ticket-extras"><h2>Logs</h2>' + logs_html
+               + "<h2>Model and tokens</h2>"
+               + f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+               + "</section>")
+    if fragment:
+        return section
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f"<title>HireEmber ticket {ticket_id}</title></head><body>{section}</body></html>")
