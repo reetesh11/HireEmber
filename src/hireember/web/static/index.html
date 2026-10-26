@@ -291,10 +291,20 @@ async function refreshDetail(force) {
     const t = await api("GET", "/api/tickets/" + state.selected);
     if (!force && detailDirty()) return;
     renderDetail(t);
+    loadTicketExtras(t.id);
   } catch (e) {
     if (e.status === 404) { toast("This ticket changed. Reloaded."); state.selected = null; box.classList.add("hidden"); loadTickets(); }
     else if (force) toast(e.message, true);
   }
+}
+async function loadTicketExtras(id) {
+  try {
+    const res = await fetch("/tickets/" + id + "?fragment=1");
+    if (!res.ok || state.selected !== id) return;
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    if (state.selected !== id) return;
+    $("detail").append(...doc.body.childNodes);
+  } catch (e) { /* the logs and tokens section is optional */ }
 }
 function renderDetail(t) {
   const box = $("detail");

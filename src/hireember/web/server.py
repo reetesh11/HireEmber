@@ -97,6 +97,7 @@ def _ticket_detail(conn, ticket_id: int):
             blocked = {k: i[k] for k in ("reason", "next_step", "question", "queue_item_id")}
     detail["blocked"] = blocked
     detail["logs"] = queries.ticket_logs(conn, ticket_id)
+    detail["usage"] = queries.ticket_usage(conn, ticket_id)
     return detail
 
 

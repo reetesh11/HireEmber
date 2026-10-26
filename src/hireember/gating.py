@@ -8,7 +8,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 
-from hireember import tickets
+from hireember import tickets, usage
 from hireember.config import COVER_LETTER_DIR, TAILORED_DIR, load_profile
 from hireember.location import location_skip_reason
 from hireember.resumes import ResumeError, choose_resume, get_resume_text
@@ -77,15 +77,19 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
     except ResumeError as e:
         return _block(conn, url, str(e), resume_id)
 
-    result = scorer.score_job(resume_text, job, profile)
+    with usage.collect() as spent:
+        result = scorer.score_job(resume_text, job, profile)
     if not result["score"]:
         reason = result["reasoning"] or ""
         if not reason.startswith("LLM error"):
             reason = "LLM error: no score in the response"
-        return _block(conn, url, reason, resume_id)
+        blocked = _block(conn, url, reason, resume_id)
+        usage.record_collected(conn, blocked.ticket_id, "scoring", spent)
+        return blocked
 
     prior = tickets.get_ticket_by_url(conn, url)
     ticket_id = tickets.set_job_score(conn, url, result["score"], result["reasoning"] or "no reason given")
+    usage.record_collected(conn, ticket_id, "scoring", spent)
     tickets.set_ticket_resume(conn, ticket_id, resume_id)
     if prior and prior["score"] is None and prior["status"] == "blocked for human":
         # An earlier attempt blocked before scoring; the score now decides the status.
@@ -129,16 +133,20 @@ def tailor_ticket(conn: sqlite3.Connection, ticket_id: int, *, profile: dict | N
         resume_text = get_resume_text(conn, ticket["resume_id"])
     except ResumeError as e:
         return block(str(e))
-    try:
-        tailored, report = tailor.tailor_resume(resume_text, job, profile, max_retries=max_retries,
-                                                validation_mode=validation_mode)
-        if report["status"] not in ("approved", "approved_with_judge_warning"):
-            return block(_fail_reason(report))
-        letter = cover_letter.generate_cover_letter(tailored, job, profile,
+    with usage.collect() as spent:
+        try:
+            tailored, report = tailor.tailor_resume(resume_text, job, profile,
+                                                    max_retries=max_retries,
                                                     validation_mode=validation_mode)
-    except Exception as e:
-        log.error("Tailoring ticket %d failed: %s", ticket_id, e)
-        return block(f"LLM error: {e}")
+            if report["status"] not in ("approved", "approved_with_judge_warning"):
+                return block(_fail_reason(report))
+            letter = cover_letter.generate_cover_letter(tailored, job, profile,
+                                                        validation_mode=validation_mode)
+        except Exception as e:
+            log.error("Tailoring ticket %d failed: %s", ticket_id, e)
+            return block(f"LLM error: {e}")
+        finally:
+            usage.record_collected(conn, ticket_id, "tailoring", spent)
 
     TAILORED_DIR.mkdir(parents=True, exist_ok=True)
     COVER_LETTER_DIR.mkdir(parents=True, exist_ok=True)

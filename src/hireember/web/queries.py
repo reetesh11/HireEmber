@@ -9,7 +9,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
-from hireember import logs
+from hireember import logs, usage
 from hireember.tickets import ALLOWED_STATUSES
 
 NO_LINK = "No link available"
@@ -303,7 +303,7 @@ def ticket_logs(conn: sqlite3.Connection, ticket_id: int) -> list[dict]:
 
 
 def ticket_usage(conn: sqlite3.Connection, ticket_id: int) -> dict:
-    return {"scoring": None, "tailoring": None, "applying": None}
+    return usage.get_usage(conn, ticket_id)
 
 
 def ticket_extras_html(conn: sqlite3.Connection, ticket_id: int, fragment: bool = False) -> str:
