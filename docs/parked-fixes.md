@@ -30,3 +30,9 @@ These are not HireEmber bugs. They belong in the CongoForce plugin (`/Users/reet
 | 10 | note | `apply/gate_server.py` | Hand-rolled stdio MCP server (human decision: start here). Consider moving to the `mcp` SDK later. Only `call_tool` and `TOOLS` are tested, not the transport. |
 | 11 | note | `req.md` R10 and AC-8 | They still say 2 minutes between submissions. The human replaced that with a one-day wait for the same company (see `answers.md`). Update the requirement text if it is reused. |
 | 12 | note | `tests/acceptance/test_p3_*.py` | Written by the tech-spec author, not an independent agent. The worker-loop duplicate test assumes the loop checks for duplicates before launching Chrome. Revisit if the verifier finds the test unfair. |
+
+## Traceability known exceptions
+
+Requirements with no automated test of their own are listed here and in the Known exceptions
+section of `docs/traceability.md`. At the end of phase 6 there are none: every FR, SAF and NFR ID
+has a test in the main table.
