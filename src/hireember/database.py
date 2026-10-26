@@ -351,7 +351,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
 
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
-               site: str, strategy: str) -> tuple[int, int]:
+               site: str, strategy: str, now: str | None = None) -> tuple[int, int]:
     """Store discovered jobs, skipping duplicates by URL.
 
     Args:
@@ -360,11 +360,12 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             Jobs whose url or application_url is on LinkedIn are skipped.
         site: Source site name (e.g. "RemoteOK", "Dice").
         strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
+        now: ISO timestamp to record as discovered/last seen (default: the current time).
 
     Returns:
         Tuple of (new_count, duplicate_count).
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = now or datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
 

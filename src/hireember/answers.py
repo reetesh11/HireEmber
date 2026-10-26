@@ -17,7 +17,7 @@ SOURCES = ("profile", "user", "import")
 
 READY_KINDS = (
     "account needed", "captcha", "identity check", "video or biometric",
-    "review before submit", "manual site", "outcome unknown",
+    "review before submit", "manual site", "outcome unknown", "run blocked",
 )
 
 _SENSITIVE = re.compile(

@@ -705,8 +705,8 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 def main(limit: int = 1, target_url: str | None = None,
          min_score: int = 7, headless: bool = False, model: str = "sonnet",
          dry_run: bool = False, continuous: bool = False,
-         poll_interval: int = 60, workers: int = 1, review: bool | None = None) -> None:
-    """Launch the apply pipeline.
+         poll_interval: int = 60, workers: int = 1, review: bool | None = None) -> int:
+    """Launch the apply pipeline and return how many applications were submitted.
 
     Args:
         limit: Max jobs to apply to (0 or with continuous=True means run forever).
@@ -775,8 +775,10 @@ def main(limit: int = 1, target_url: str | None = None,
             kill_all_chrome()
             raise KeyboardInterrupt
 
-    signal.signal(signal.SIGINT, _sigint_handler)
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, _sigint_handler)
 
+    total_applied = 0
     try:
         with Live(render_full(), console=console, refresh_per_second=2) as live:
             # Daemon thread for display refresh only (no business logic)
@@ -853,7 +855,8 @@ def main(limit: int = 1, target_url: str | None = None,
         console.print(f"Logs: {config.LOG_DIR}")
 
     except KeyboardInterrupt:
-        pass
+        total_applied = 0
     finally:
         _stop_event.set()
         kill_all_chrome()
+    return total_applied

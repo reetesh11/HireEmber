@@ -19,7 +19,8 @@ logging.basicConfig(
 
 app = typer.Typer(
     name="hireember",
-    help="HireEmber — AI-powered end-to-end job application pipeline.",
+    help=("HireEmber — AI-powered end-to-end job application pipeline. "
+          "Keep a company list, schedule daily runs, and export your results."),
     no_args_is_help=True,
 )
 console = Console()
@@ -62,7 +63,10 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """HireEmber — AI-powered end-to-end job application pipeline."""
+    """HireEmber — AI-powered end-to-end job application pipeline.
+
+    Keep a company list, schedule daily runs, and export your results.
+    """
 
 
 @app.command()
@@ -99,7 +103,11 @@ def run(
     ),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Never prompt; list missing settings and exit 1."),
 ) -> None:
-    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf.
+
+    Exactly one of discover, score or tailor runs only that stage and prints its result.
+    discover searches the company list (see `hireember company add`).
+    """
     _bootstrap()
 
     from hireember.pipeline import run_pipeline
@@ -124,6 +132,16 @@ def run(
         )
         raise typer.Exit(code=1)
 
+    single_stage = (len(stage_list) == 1 and stage_list[0] in ("discover", "score", "tailor")
+                    and not dry_run and not stream)
+    if single_stage:
+        from hireember import runs
+        from hireember.database import get_connection
+
+        if runs.is_running(get_connection()):
+            console.print("A run is already in progress.", markup=False)
+            raise typer.Exit(code=1)
+
     skipped_notes: list[str] = []
     if not dry_run:
         from hireember import preflight
@@ -139,6 +157,15 @@ def run(
     if any(s in stage_list for s in llm_stages) or "all" in stage_list:
         from hireember.config import check_tier
         check_tier(2, "AI scoring/tailoring")
+
+    if single_stage:
+        try:
+            outcome_msg = runs.run_stage(stage_list[0], min_score=min_score, validation_mode=validation)
+        except runs.RunInProgressError as e:
+            console.print(str(e), markup=False)
+            raise typer.Exit(code=1)
+        console.print(outcome_msg.message, markup=False, highlight=False)
+        return
 
     kwargs = {"skipped_notes": skipped_notes} if skipped_notes else {}
     result = run_pipeline(
@@ -279,17 +306,29 @@ def apply(
         console.print(f"  Target:   {url}")
     console.print()
 
-    apply_main(
-        limit=effective_limit,
-        target_url=url,
-        min_score=min_score,
-        headless=headless,
-        model=model,
-        dry_run=dry_run,
-        continuous=continuous,
-        workers=workers,
-        review=True if review else None,
-    )
+    from hireember import runs
+
+    lock_conn = get_connection()
+    try:
+        token = runs.acquire_lock(lock_conn)
+    except runs.RunInProgressError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+    try:
+        submitted = apply_main(
+            limit=effective_limit,
+            target_url=url,
+            min_score=min_score,
+            headless=headless,
+            model=model,
+            dry_run=dry_run,
+            continuous=continuous,
+            workers=workers,
+            review=True if review else None,
+        )
+    finally:
+        runs.release_lock(lock_conn, token)
+    console.print(f"apply: {submitted or 0} submitted.", markup=False)
 
 
 @app.command()
@@ -538,7 +577,8 @@ def queue_ready(item_id: int = typer.Argument(..., help="Queue item id.")) -> No
 # Companies
 # ---------------------------------------------------------------------------
 
-company_app = typer.Typer(help="Companies and the manual-only flag.", no_args_is_help=True)
+company_app = typer.Typer(
+    help="The companies HireEmber searches, and the manual-only flag.", no_args_is_help=True)
 app.add_typer(company_app, name="company")
 
 
@@ -562,9 +602,47 @@ def company_manual(
     console.print(f'Company "{name}" is {state}.', markup=False)
 
 
+@company_app.command("add", help="Add a company to the list discovery searches.")
+def company_add(
+    name: str = typer.Argument(..., help="Company name."),
+    url: str = typer.Option(..., "--url", help="Careers page URL."),
+    ats: str = typer.Option(..., "--ats", help="ATS type: workday or careers-page."),
+) -> None:
+    """Add a company to the list discovery searches."""
+    _bootstrap()
+
+    from hireember.companies import add_company
+    from hireember.database import get_connection
+    from hireember.tickets import TicketError
+
+    try:
+        add_company(get_connection(), name, url, ats)
+    except TicketError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f'Added company "{name}".', markup=False)
+
+
+@company_app.command("remove", help="Take a company off the list discovery searches.")
+def company_remove(name: str = typer.Argument(..., help="Company name.")) -> None:
+    """Take a company off the list discovery searches. Its past jobs and tickets stay."""
+    _bootstrap()
+
+    from hireember.companies import remove_company
+    from hireember.database import get_connection
+    from hireember.tickets import TicketError
+
+    try:
+        remove_company(get_connection(), name)
+    except TicketError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f'Removed company "{name}".', markup=False)
+
+
 @company_app.command("list")
 def company_list() -> None:
-    """Show every company and whether it is manual-only."""
+    """Show every company on the list, its careers page, ATS and manual-only flag."""
     _bootstrap()
 
     from hireember.database import get_connection
@@ -575,11 +653,117 @@ def company_list() -> None:
         console.print("No companies yet.")
         return
     table = Table(title="Companies", show_header=True, header_style="bold cyan")
-    for column in ("Id", "Name", "Manual-only"):
-        table.add_column(column)
+    for column in ("Id", "Name", "Careers URL", "ATS", "Manual-only"):
+        table.add_column(column, overflow="fold")
     for r in rows:
-        table.add_row(str(r["id"]), r["name"], "yes" if r["manual_only"] else "no")
+        table.add_row(str(r["id"]), r["name"], r["careers_url"], r["ats_type"],
+                      "yes" if r["manual_only"] else "no")
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Schedule
+# ---------------------------------------------------------------------------
+
+def _applying_line(schedule) -> str:
+    if schedule.apply:
+        return f"Scheduled applying: on (up to {schedule.apply_limit} per day)."
+    return "Scheduled applying: off."
+
+
+@app.command(help="Show or set the daily times for scheduled runs, and whether they may apply.")
+def schedule(
+    at: Optional[list[str]] = typer.Option(
+        None, "--at", help="Daily run time, 24-hour HH:MM (repeat for several), e.g. --at 08:00."),
+    off: bool = typer.Option(False, "--off", help="Clear the schedule."),
+    apply: Optional[str] = typer.Option(
+        None, "--apply", help="Let scheduled runs apply to jobs: on or off (default off)."),
+    apply_limit: Optional[int] = typer.Option(
+        None, "--apply-limit", help="Most applications scheduled runs make per day (default 25)."),
+) -> None:
+    """Show or set the daily times for scheduled runs. Runs fire only while `hireember scheduler` runs."""
+    _bootstrap()
+
+    from hireember import scheduler
+    from hireember.database import get_connection
+
+    conn = get_connection()
+    if apply is not None and apply not in ("on", "off"):
+        console.print('Invalid --apply value "%s". Use on or off.' % apply, markup=False)
+        raise typer.Exit(code=1)
+    if apply_limit is not None and apply_limit < 1:
+        console.print("The apply limit must be at least 1.", markup=False)
+        raise typer.Exit(code=1)
+    try:
+        times = sorted({scheduler.parse_time(t) for t in at or []})
+    except scheduler.ScheduleError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+
+    changed = False
+    if apply is not None or apply_limit is not None:
+        scheduler.set_apply(conn, on=None if apply is None else apply == "on", limit=apply_limit)
+        changed = True
+    if off:
+        scheduler.clear_schedule(conn)
+        console.print("Schedule cleared.", markup=False)
+        changed = True
+    elif times:
+        scheduler.set_schedule(conn, times)
+        console.print(f"Schedule set: daily at {', '.join(times)}.", markup=False)
+        console.print(
+            "Runs fire only while `hireember scheduler` is running. A run missed while it was "
+            "not running starts once at the next start.", markup=False)
+        changed = True
+
+    current = scheduler.get_schedule(conn)
+    if at or off:
+        return
+    if not changed:
+        line = f"Scheduled daily at {', '.join(current.times)}." if current.times else "No schedule set."
+        console.print(line, markup=False)
+    console.print(_applying_line(current), markup=False)
+
+
+@app.command(help="Run in the foreground and start scheduled runs when their time comes.")
+def scheduler(
+    once: bool = typer.Option(False, "--once", help="Check for a due run once and exit."),
+    poll_seconds: float = typer.Option(30, "--poll-seconds", help="Seconds between checks."),
+) -> None:
+    """Run in the foreground and start scheduled runs when their time comes."""
+    _bootstrap()
+
+    from hireember import scheduler as scheduler_mod
+
+    if not once:
+        console.print("Scheduler running. Press Ctrl+C to stop.", markup=False)
+    try:
+        scheduler_mod.serve(poll_seconds=poll_seconds, once=once)
+    except KeyboardInterrupt:
+        console.print("Scheduler stopped.", markup=False)
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+@app.command("export", help="Write your tickets and runs to tickets.csv and runs.csv.")
+def export_command(
+    out: str = typer.Option(".", "--out", help="Folder to write tickets.csv and runs.csv into."),
+) -> None:
+    """Write your tickets and your runs to two CSV files (tickets.csv and runs.csv)."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.export import ExportError, export_csv
+
+    try:
+        results = export_csv(get_connection(), out)
+    except ExportError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(code=1)
+    for path, count in results:
+        console.print(f"Wrote {path} ({count} rows).", markup=False, soft_wrap=True)
 
 
 # ---------------------------------------------------------------------------

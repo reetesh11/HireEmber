@@ -247,3 +247,33 @@ def tickets_csv(conn: sqlite3.Connection, filters: TicketFilters | None = None,
             "" if t["score"] is None else t["score"], t["resume_name"] or "",
             t["applied_date"] or "", t["link"]["url"] if t["link"] else "", notes)])
     return out.getvalue()
+
+
+# -- runs page ----------------------------------------------------------------
+
+_RUN_COLUMNS = (("Started", "started_at"), ("Trigger", "trigger"), ("Status", "status"),
+                ("Found", "found"), ("Scored", "scored"), ("Skipped", "skipped"),
+                ("Tickets created", "tickets_created"), ("Tickets blocked", "tickets_blocked"))
+
+
+def runs_html(conn: sqlite3.Connection, fragment: bool = False, limit: int = 50) -> str:
+    """The runs summary as server-rendered HTML (every value escaped); a full page unless fragment."""
+    from dataclasses import asdict
+    from html import escape
+
+    from hireember.runs import list_runs
+
+    runs = [asdict(r) for r in list_runs(conn, limit)]
+    if runs:
+        head = "".join(f'<th scope="col">{escape(label)}</th>' for label, _ in _RUN_COLUMNS)
+        rows = "".join(
+            "<tr>" + "".join(f"<td>{escape(str(r[key]))}</td>" for _, key in _RUN_COLUMNS) + "</tr>"
+            for r in runs)
+        body = f"<table><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>"
+    else:
+        body = "<p>No runs yet.</p>"
+    section = f'<section id="runs-summary"><h2>Runs</h2>{body}</section>'
+    if fragment:
+        return section
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>HireEmber runs</title>'
+            f"</head><body>{section}</body></html>")

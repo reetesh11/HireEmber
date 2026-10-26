@@ -7,12 +7,13 @@ import re
 import sqlite3
 import tempfile
 import webbrowser
+from dataclasses import asdict
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from hireember import answers, database, resumes, tickets
+from hireember import answers, database, resumes, runs, tickets
 from hireember.web import queries
 
 DEFAULT_HOST = "127.0.0.1"
@@ -270,6 +271,17 @@ class Handler(BaseHTTPRequestHandler):
             name = f'attachment; filename="hireember-tickets-{date.today().isoformat()}.csv"'
             self._send(200, b"\xef\xbb\xbf" + text.encode("utf-8"), "text/csv; charset=utf-8",
                        {"Content-Disposition": name})
+        elif path == "/runs":
+            fragment = (params.get("fragment") or [""])[0] not in ("", "0")
+            self._send(200, queries.runs_html(conn, fragment).encode("utf-8"),
+                       "text/html; charset=utf-8")
+        elif path == "/api/runs":
+            self._json(200, {"runs": [asdict(r) for r in runs.list_runs(conn)]})
+        elif path == "/api/stages/status":
+            last = runs.last_stage_result(conn)
+            self._json(200, {"running": runs.is_running(conn),
+                             "last": {"stage": last.get("stage"), "message": last.get("message")}
+                             if last else None})
         elif path == "/api/answers":
             self._json(200, _answers(conn))
         elif path == "/api/resumes":
@@ -315,6 +327,8 @@ class Handler(BaseHTTPRequestHandler):
             answers.merge_answers(conn, _id(body, "keep_id"), _id(body, "remove_id"),
                                   question=body.get("question"), answer=body.get("answer"))
             self._json(200, {"ok": True})
+        elif method == "POST" and (m := re.fullmatch(r"/api/stages/([\w-]+)", path)):
+            self._start_stage(m.group(1))
         elif method == "PUT" and (m := re.fullmatch(r"/api/answers/(\d+)", path)):
             body = self._json_body()
             answers.update_answer(conn, int(m.group(1)), _text(body, "question"),
@@ -332,6 +346,19 @@ class Handler(BaseHTTPRequestHandler):
             self._replace_resume_file(conn, int(m.group(1)))
         else:
             raise ApiError(404, "Not found.", "not_found")
+
+    def _start_stage(self, stage: str) -> None:
+        if stage not in runs.STAGE_NAMES:
+            raise ApiError(404, "Not found.", "not_found")
+        limit = self._json_body().get("limit")
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 1):
+            raise ApiError(400, "limit must be a whole number of at least 1.", "bad_request")
+        try:
+            runs.start_stage_async(stage, stages=self.server.stages, limit=limit,
+                                   conn=database.get_connection(self.server.db_path))
+        except runs.RunInProgressError as exc:
+            raise ApiError(409, str(exc), "run_in_progress") from None
+        self._json(202, {"started": True, "stage": stage})
 
     def _replace_resume_file(self, conn, resume_id: int) -> None:
         name = Path(self.headers.get("X-Filename", "").replace("\\", "/")).name
@@ -358,17 +385,22 @@ class Handler(BaseHTTPRequestHandler):
 class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, db_path):
+    def __init__(self, address, db_path, stages=None):
         self.db_path = db_path
+        self.stages = stages
         super().__init__(address, Handler)
 
 
 def create_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                  db_path: str | Path | None = None) -> ThreadingHTTPServer:
-    """Create (but do not start) the dashboard server; only 127.0.0.1 is allowed."""
+                  db_path: str | Path | None = None,
+                  stages: runs.Stages | None = None) -> ThreadingHTTPServer:
+    """Create (but do not start) the dashboard server; only 127.0.0.1 is allowed.
+
+    ``stages`` replaces the real stage callables (used by tests).
+    """
     if host != DEFAULT_HOST:
         raise HostRefusedError(host)
-    server = DashboardServer((host, port), db_path)
+    server = DashboardServer((host, port), db_path, stages)
     database.init_db(db_path)
     return server
 

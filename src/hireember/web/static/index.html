@@ -61,6 +61,7 @@
     <button role="tab" id="tab-blocked" aria-selected="false">Blocked (0)</button>
     <button role="tab" id="tab-answers" aria-selected="false">Answers</button>
     <button role="tab" id="tab-resumes" aria-selected="false">Resumes</button>
+    <button role="tab" id="tab-runs" aria-selected="false">Runs</button>
   </div>
   <span id="live" role="status">Live</span>
 </header>
@@ -89,6 +90,16 @@
   <section id="page-blocked" class="hidden"></section>
   <section id="page-answers" class="hidden"></section>
   <section id="page-resumes" class="hidden"></section>
+  <section id="page-runs" class="hidden">
+    <div class="bar">
+      <button id="run-discover">Run discover</button>
+      <button id="run-score">Run score</button>
+      <button id="run-tailor">Run tailor</button>
+      <button id="run-apply">Run apply</button>
+      <span id="run-status" class="msg" role="status"></span>
+    </div>
+    <div id="runs-view"></div>
+  </section>
 </main>
 <div id="toasts" aria-live="polite"></div>
 <script>
@@ -186,7 +197,7 @@ function readUrl() {
   if (p.get("view") === "list") state.view = "list";
   if (p.get("sort")) state.sort = p.get("sort");
   if (p.get("dir") === "asc" || p.get("dir") === "desc") state.dir = p.get("dir");
-  if (["tickets", "blocked", "answers", "resumes"].includes(p.get("tab"))) state.tab = p.get("tab");
+  if (["tickets", "blocked", "answers", "resumes", "runs"].includes(p.get("tab"))) state.tab = p.get("tab");
 }
 
 /* ---------- tickets ---------- */
@@ -461,16 +472,46 @@ function renderResumes() {
   root.append(msg, h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Tags", "Pinned", "File", ""].map((x) => h("th", { scope: "col" }, x)))), body));
 }
 
+/* ---------- runs ---------- */
+const RUN_STAGES = ["discover", "score", "tailor", "apply"];
+async function loadRuns() {
+  try {
+    const res = await fetch("/runs?fragment=1");
+    if (!res.ok) throw new Error("Request failed.");
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    $("runs-view").replaceChildren(...doc.body.childNodes);
+  } catch (e) { $("runs-view").replaceChildren(h("p", { class: "msg" }, "Could not load runs.")); }
+}
+async function loadStageStatus() {
+  try {
+    const st = await api("GET", "/api/stages/status");
+    for (const s of RUN_STAGES) $("run-" + s).disabled = st.running;
+    if (st.running) $("run-status").textContent = "Running...";
+    else if (st.last) $("run-status").textContent = st.last.message;
+    return st;
+  } catch (e) { return null; }
+}
+async function startStage(stage) {
+  try {
+    await api("POST", "/api/stages/" + stage, {});
+    $("run-status").textContent = "Running...";
+  } catch (e) {
+    $("run-status").textContent = e.status === 409 ? "A run is already in progress." : e.message;
+  }
+  loadStageStatus(); loadRuns();
+}
+
 /* ---------- tabs, polling, startup ---------- */
 function showTab(name) {
   state.tab = name;
-  for (const t of ["tickets", "blocked", "answers", "resumes"]) {
+  for (const t of ["tickets", "blocked", "answers", "resumes", "runs"]) {
     $("tab-" + t).setAttribute("aria-selected", String(t === name));
     $("page-" + t).classList.toggle("hidden", t !== name);
   }
   if (name === "blocked") loadBlocked();
   if (name === "answers") loadAnswers();
   if (name === "resumes") loadResumes();
+  if (name === "runs") { loadRuns(); loadStageStatus(); }
   if (name === "tickets") loadTickets();
   mirrorUrl();
 }
@@ -484,11 +525,13 @@ async function poll() {
       loadTickets();
       if (state.tab === "blocked") loadBlocked(); else if (state.blocked) loadBlocked();
     }
+    if (state.tab === "runs") { const st = await loadStageStatus(); if (st && !st.running) loadRuns(); }
   } catch (e) { setLive(false); }
 }
 async function init() {
   readUrl();
-  for (const t of ["tickets", "blocked", "answers", "resumes"]) $("tab-" + t).addEventListener("click", () => showTab(t));
+  for (const t of ["tickets", "blocked", "answers", "resumes", "runs"]) $("tab-" + t).addEventListener("click", () => showTab(t));
+  for (const s of RUN_STAGES) $("run-" + s).addEventListener("click", () => startStage(s));
   $("btn-board").addEventListener("click", () => { state.view = "board"; mirrorUrl(); renderTickets(); });
   $("btn-list").addEventListener("click", () => { state.view = "list"; mirrorUrl(); renderTickets(); });
   $("btn-clear").addEventListener("click", clearFilters);

@@ -45,6 +45,14 @@ def calls(monkeypatch):
         return {"stages": [], "errors": {}, "elapsed": 0.0}
 
     monkeypatch.setattr("hireember.pipeline.run_pipeline", fake_pipeline)
+
+    def fake_run_stage(stage, **kwargs):
+        # A single discover, score or tailor goes through runs.run_stage (phase 5).
+        rec.append(((), {"stages": [stage]}))
+        from hireember.runs import StageResult
+        return StageResult(stage, f"{stage}: done.", {})
+
+    monkeypatch.setattr("hireember.runs.run_stage", fake_run_stage)
     return rec
 
 

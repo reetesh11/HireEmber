@@ -1,0 +1,27 @@
+flowchart LR
+  user([User]) --> cli["cli.py: schedule, scheduler, export, company add/remove, run, apply"]:::changed
+  user --> dash["web/server.py and index.html"]:::changed
+  cli --> sched["scheduler.py"]:::new
+  sched -->|"tick: due slot"| runs["runs.py"]:::new
+  cli -->|"single stage"| runs
+  dash -->|"POST /api/stages"| runs
+  runs --> stages["stages.py default_stages"]:::new
+  stages --> disc["discovery/companies.py"]:::new
+  disc --> wd["discovery/workday.py"]
+  disc --> se["discovery/smartextract.py"]
+  disc --> sj["database.py store_jobs"]:::changed
+  stages --> score["scoring/scorer.py and tailor.py"]
+  stages --> launch["apply/launcher.py main"]:::changed
+  launch --> lim["apply/limits.py"]
+  runs --> companies["companies.py"]:::new
+  cli --> companies
+  disc --> companies
+  runs --> ans["answers.py queue_items"]:::changed
+  cli --> exp["export.py"]:::new
+  exp --> q["web/queries.py tickets_csv"]
+  dash --> q
+  runs --> db[("sqlite: runs, run_lock, run_log, settings, companies")]:::changed
+  sched --> db
+  mig["migration.py ensure_phase5_schema"]:::changed --> db
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
