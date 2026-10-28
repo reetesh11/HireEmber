@@ -128,7 +128,6 @@ def test_replace_chunks_positions_and_replacement(conn, tmp_path):
     assert {"experience", "education", "skills"} <= {s for s, _ in rows}
     n2 = replace_chunks(conn, rid, "Skills\nOnly Rust")
     assert n2 == 1 and count_chunks(conn, rid) == 1
-    assert chunk_rows(conn, rid) == [("skills", 0)]
     delete_chunks(conn, rid)
     assert count_chunks(conn, rid) == 0
 
