@@ -17,7 +17,7 @@ def test_required_strings():
                  "Merge these two answers into one? The other entry will be deleted.",
                  "Delete this answer? This cannot be undone.",
                  "No stored answers yet. Answers you give are saved here.",
-                 "No resumes yet. Add one with 'hireember resume add'."):
+                 "No resumes yet. Add one with the form above or with 'hireember resume add'."):
         assert text in PAGE, text
 
 
