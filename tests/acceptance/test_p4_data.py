@@ -221,7 +221,7 @@ def test_resumes_http_edit_and_replace_file(conn, api, tmp_path):
     assert open(path, encoding="utf-8").read() == "new text body"
 
     status, _, body = api.request("POST", f"/api/resumes/{rid}/file", raw=b"x",
-                                  headers={"X-Filename": "bad.docx"})
+                                  headers={"X-Filename": "bad.doc"})
     assert status == 400
-    assert json.loads(body)["error"] == "Unsupported format. Provide a .txt or .pdf file."
+    assert json.loads(body)["error"] == "Unsupported format. Provide a .pdf, .txt or .docx file."
     assert open(resumes.list_resumes(conn)[0]["file_path"], encoding="utf-8").read() == "new text body"
