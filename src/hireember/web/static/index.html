@@ -7,7 +7,7 @@
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --line:#d9dde3; --text:#1c2430; --muted:#5d6877; --accent:#b45309; --ok:#047857; --err:#b91c1c; }
   * { box-sizing: border-box; }
-  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  body { margin:0; height:100vh; display:flex; flex-direction:column; overflow:hidden; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
   header { display:flex; align-items:center; gap:16px; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); }
   header h1 { font-size:18px; margin:0; color:var(--accent); }
   [role=tablist] { display:flex; gap:4px; }
@@ -15,7 +15,8 @@
   [role=tab][aria-selected=true] { border-color:var(--accent); font-weight:600; }
   #live { margin-left:auto; font-size:12px; color:var(--ok); }
   #live.down { color:var(--err); }
-  main { padding:16px; }
+  main { flex:1; min-height:0; overflow:auto; padding:16px; display:flex; flex-direction:column; }
+  #page-tickets:not(.hidden) { flex:1; min-height:0; display:flex; flex-direction:column; }
   .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:12px; }
   .bar label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); }
   input, select, textarea, button { font:inherit; }
@@ -25,8 +26,8 @@
   button[aria-pressed=true] { background:#fde7c8; border-color:var(--accent); }
   button:disabled { opacity:.5; cursor:default; }
   a.button { padding:5px 10px; border:1px solid var(--line); background:var(--card); border-radius:4px; color:inherit; text-decoration:none; }
-  .layout { display:flex; gap:16px; align-items:flex-start; }
-  .view { flex:1; min-width:0; }
+  .layout { display:flex; gap:16px; align-items:stretch; flex:1; min-height:0; }
+  .view { flex:1; min-width:0; overflow-y:auto; }
   .board { display:flex; gap:10px; overflow-x:auto; padding-bottom:8px; }
   .col { min-width:200px; flex:1; background:#eceff3; border-radius:6px; padding:8px; }
   .col h3 { margin:0 0 8px; font-size:13px; text-transform:capitalize; }
@@ -39,7 +40,10 @@
   th.sortable { cursor:pointer; user-select:none; }
   tr.row { cursor:pointer; }
   tr.sel { background:#fff4e3; }
-  aside { width:380px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px; }
+  aside { width:380px; flex:none; overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px; }
+  .aside-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .aside-head h2 { word-break:break-word; }
+  thead th { position:sticky; top:0; background:var(--card); }
   aside h2 { margin:0 0 6px; font-size:16px; }
   aside label { display:block; margin-top:8px; font-size:12px; color:var(--muted); }
   aside textarea, aside input, aside select { width:100%; }
@@ -278,6 +282,12 @@ function clearFilters() {
 
 /* ---------- detail panel ---------- */
 function selectTicket(id) { state.selected = id; renderTickets(); refreshDetail(true); }
+function closeDetail() {
+  state.selected = null;
+  $("detail").classList.add("hidden");
+  renderTickets();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.selected != null) closeDetail(); });
 function detailDirty() {
   const a = document.activeElement;
   if (a && $("detail").contains(a) && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return true;
@@ -335,7 +345,9 @@ function renderDetail(t) {
     }
   };
   box.append(
-    h("h2", {}, t.title), h("div", {}, t.company + (t.location ? " - " + t.location : "")),
+    h("div", { class: "aside-head" }, h("h2", {}, t.title),
+      h("button", { type: "button", "aria-label": "Close details", title: "Close (Esc)", onclick: closeDetail }, "✕")),
+    h("div", {}, t.company + (t.location ? " - " + t.location : "")),
     h("div", { class: "muted" }, "Status: " + t.status + (t.status_reason ? " (" + t.status_reason + ")" : "") + (t.score != null ? " - score " + t.score : "")),
     h("div", {}, linkNode(t.link)),
     t.blocked && h("div", { class: "panel" }, h("strong", {}, "Blocked: "), t.blocked.reason, h("div", {}, "Next step: " + t.blocked.next_step), t.blocked.question && h("div", {}, "Question: " + t.blocked.question)),
