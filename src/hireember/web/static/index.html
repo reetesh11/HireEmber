@@ -93,7 +93,16 @@
   </section>
   <section id="page-blocked" class="hidden"></section>
   <section id="page-answers" class="hidden"></section>
-  <section id="page-resumes" class="hidden"></section>
+  <section id="page-resumes" class="hidden">
+    <form id="resume-form" class="panel" aria-label="Add a resume">
+      <label>File <input type="file" id="resume-file" aria-label="File" accept=".pdf,.txt,.docx"></label>
+      <label>Name <input type="text" id="resume-name" aria-label="Name"></label>
+      <label>Tags <input type="text" id="resume-tags" aria-label="Tags" placeholder="backend, python"></label>
+      <button type="submit" class="primary" id="resume-add">Add resume</button>
+    </form>
+    <div id="resume-msg" class="msg" role="alert"></div>
+    <div id="resume-list"></div>
+  </section>
   <section id="page-runs" class="hidden">
     <div class="bar">
       <button id="run-discover">Run discover</button>
@@ -457,41 +466,81 @@ function renderMerge(pair) {
 /* ---------- resumes ---------- */
 async function loadResumes() {
   try { state.resumes = (await api("GET", "/api/resumes")).resumes; fillResumeFilter(); renderResumes(); }
-  catch (e) { $("page-resumes").replaceChildren(h("p", { class: "msg" }, e.message)); }
+  catch (e) { $("resume-list").replaceChildren(h("p", { class: "msg" }, e.message)); }
 }
 function fillResumeFilter() {
   const sel = $("f-resume"), keep = sel.value || new URLSearchParams(location.search).get("resume_id") || "";
   sel.replaceChildren(h("option", { value: "" }, "Any"), state.resumes.map((r) => h("option", { value: String(r.id) }, r.name)));
   sel.value = keep;
 }
+function extractionText(r) {
+  if (r.extract_status === "extracted") return "Extracted";
+  if (r.extract_status === "failed") return "Failed: " + r.extract_reason;
+  if (r.extract_status === "no_text") return "No text found: " + r.extract_reason;
+  return "Not extracted";
+}
 function renderResumes() {
-  const root = $("page-resumes");
+  const root = $("resume-list"), msg = $("resume-msg");
   root.replaceChildren();
-  if (!state.resumes.length) return root.append(h("p", {}, "No resumes yet. Add one with 'hireember resume add'."));
-  const msg = h("div", { class: "msg", role: "alert" });
+  if (!state.resumes.length) return root.append(h("p", {}, "No resumes yet. Add one with the form above or with 'hireember resume add'."));
   const body = h("tbody", {});
   for (const r of state.resumes) {
     if (state.editingResume === r.id) {
-      const name = h("input", { type: "text", value: r.name, "aria-label": "Name" });
-      const tags = h("input", { type: "text", value: r.tags.join(", "), "aria-label": "Tags" });
+      const name = h("input", { type: "text", value: r.name, "aria-label": "Resume name" });
+      const tags = h("input", { type: "text", value: r.tags.join(", "), "aria-label": "Resume tags" });
       body.append(h("tr", {}, h("td", {}, name), h("td", {}, tags), h("td", {}, r.pinned ? "Yes" : "No"), h("td", {}, r.file_name),
+        h("td", {}, extractionText(r)), h("td", {}, String(r.chunk_count)),
         h("td", {}, h("button", { class: "primary", onclick: async () => {
           try { await api("PUT", "/api/resumes/" + r.id, { name: name.value, tags: tags.value }); toast("Resume saved."); state.editingResume = null; loadResumes(); }
           catch (e) { msg.textContent = e.message; }
         } }, "Save"), " ", h("button", { onclick: () => { state.editingResume = null; renderResumes(); } }, "Cancel"))));
       continue;
     }
-    const file = h("input", { type: "file", accept: ".pdf,.txt", class: "hidden", onchange: async (e) => {
+    const file = h("input", { type: "file", accept: ".pdf,.txt,.docx", class: "hidden", onchange: async (e) => {
       const f = e.target.files[0];
       if (!f) return;
-      try { await api("POST", "/api/resumes/" + r.id + "/file", f, { "X-Filename": f.name }); toast("Resume file replaced."); loadResumes(); }
+      msg.textContent = "";
+      try { await api("POST", "/api/resumes/" + r.id + "/file", f, { "X-Filename": encodeURIComponent(f.name) }); toast("Resume file replaced."); loadResumes(); }
       catch (err) { msg.textContent = err.message; }
     } });
     body.append(h("tr", {}, h("td", {}, r.name), h("td", {}, r.tags.join(", ")), h("td", {}, r.pinned ? "Yes" : "No"), h("td", {}, r.file_name),
-      h("td", {}, h("button", { onclick: () => { state.editingResume = r.id; renderResumes(); } }, "Edit"), " ",
-        h("button", { onclick: () => file.click() }, "Replace file"), file)));
+      h("td", {}, extractionText(r)), h("td", {}, String(r.chunk_count)),
+      h("td", {},
+        h("button", { onclick: async () => {
+          msg.textContent = "";
+          try { const res = await api("POST", "/api/resumes/" + r.id + "/extract", {}); toast(res.ok ? "Extraction finished: " + res.resume.chunk_count + " chunks." : "Extraction failed: " + res.resume.extract_reason, !res.ok); loadResumes(); }
+          catch (err) { msg.textContent = err.message; }
+        } }, "Re-extract"), " ",
+        h("button", { onclick: () => file.click() }, "Replace file"), file, " ",
+        h("button", { onclick: () => { state.editingResume = r.id; renderResumes(); } }, "Edit"), " ",
+        h("button", { onclick: async () => {
+          if (!confirm("Delete this resume? Its file and searchable text are removed. This cannot be undone.")) return;
+          msg.textContent = "";
+          try { await api("DELETE", "/api/resumes/" + r.id); toast("Resume deleted."); loadResumes(); }
+          catch (err) { msg.textContent = err.message; }
+        } }, "Delete"))));
   }
-  root.append(msg, h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Tags", "Pinned", "File", ""].map((x) => h("th", { scope: "col" }, x)))), body));
+  root.append(h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Tags", "Pinned", "File", "Extraction", "Chunks", "Actions"].map((x) => h("th", { scope: "col" }, x)))), body));
+}
+function initResumeForm() {
+  const form = $("resume-form"), btn = $("resume-add"), msg = $("resume-msg");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = $("resume-file").files[0];
+    msg.textContent = "";
+    if (!f) { msg.textContent = "Choose a file to upload."; return; }
+    btn.disabled = true; btn.textContent = "Adding...";
+    try {
+      await api("POST", "/api/resumes", f, {
+        "X-Filename": encodeURIComponent(f.name), "X-Name": encodeURIComponent($("resume-name").value),
+        "X-Tags": encodeURIComponent($("resume-tags").value),
+      });
+      form.reset();
+      toast("Resume added.");
+      await loadResumes();
+    } catch (err) { msg.textContent = err.message; }
+    finally { btn.disabled = false; btn.textContent = "Add resume"; }
+  });
 }
 
 /* ---------- runs ---------- */
@@ -562,6 +611,7 @@ async function init() {
     $(id).addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { mirrorUrl(); loadTickets(); }, 250); });
     $(id).addEventListener("change", () => { mirrorUrl(); loadTickets(); });
   }
+  initResumeForm();
   await loadResumes();
   showTab(state.tab);
   loadBlocked();

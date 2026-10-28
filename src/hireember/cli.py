@@ -890,29 +890,35 @@ def ticket_log(ticket_id: int = typer.Argument(..., help="Ticket id.")) -> None:
 # Base resumes
 # ---------------------------------------------------------------------------
 
-resume_app = typer.Typer(help="Base resumes used for scoring and tailoring.", no_args_is_help=True)
+resume_app = typer.Typer(help="Base resumes (.pdf, .txt, .docx) used for scoring and tailoring.", no_args_is_help=True)
 app.add_typer(resume_app, name="resume")
 
 
 @resume_app.command("add")
 def resume_add(
-    file: str = typer.Argument(..., help="Resume file (.txt or .pdf)."),
+    file: str = typer.Argument(..., help="Resume file (.pdf, .txt or .docx)."),
     name: str = typer.Option(..., "--name", help="Name for this resume."),
     tags: str = typer.Option("", "--tags", help="Comma-separated tags, matched against job titles."),
     text: Optional[str] = typer.Option(None, "--text", help="Plain-text copy of a PDF resume."),
 ) -> None:
-    """Add a base resume."""
+    """Add a base resume (.pdf, .txt or .docx)."""
     _bootstrap()
 
     from hireember.database import get_connection
-    from hireember.resumes import ResumeError, add_resume
+    from hireember.resumes import ResumeError, add_resume, list_resumes
 
+    conn = get_connection()
     try:
-        resume_id = add_resume(get_connection(), file, name, tags, text_file=text)
+        resume_id = add_resume(conn, file, name, tags, text_file=text)
     except ResumeError as e:
         console.print(str(e), markup=False)
         raise typer.Exit(1)
     console.print(f"Added resume {resume_id}: {name}.", markup=False)
+    row = next(r for r in list_resumes(conn) if r["id"] == resume_id)
+    if row["extract_status"] == "extracted":
+        console.print(f"Extracted {row['chunk_count']} chunks.", markup=False)
+    else:
+        console.print(f"Added, but no text could be extracted: {row['extract_reason']}", markup=False)
 
 
 @resume_app.command("list")
@@ -928,12 +934,30 @@ def resume_list() -> None:
         console.print('No base resumes. Add one with "hireember resume add".')
         return
     table = Table(title="Base resumes", show_header=True, header_style="bold cyan")
-    for column in ("Id", "Name", "Tags", "Pinned", "File", "Added"):
-        table.add_column(column)
+    for column in ("Id", "Name", "Tags", "Pinned", "File", "Added", "Extraction", "Chunks"):
+        table.add_column(column, no_wrap=column == "Name", overflow="fold")
+    labels = {"extracted": "Extracted", "failed": "Failed: {}", "no_text": "No text found: {}"}
     for r in rows:
+        extraction = labels.get(r["extract_status"], "Not extracted").format(r["extract_reason"])
         table.add_row(str(r["id"]), r["name"], ", ".join(r["tags"]), "yes" if r["pinned"] else "",
-                      r["file_path"], r["added_at"] or "")
+                      r["file_path"], r["added_at"] or "", extraction, str(r["chunk_count"]))
     console.print(table)
+
+
+@resume_app.command("delete")
+def resume_delete(resume_id: int = typer.Argument(..., help="Resume id.")) -> None:
+    """Delete a base resume that no ticket uses."""
+    _bootstrap()
+
+    from hireember.database import get_connection
+    from hireember.resumes import ResumeError, delete_resume
+
+    try:
+        delete_resume(get_connection(), resume_id)
+    except ResumeError as e:
+        console.print(str(e), markup=False)
+        raise typer.Exit(1)
+    console.print(f"Deleted resume {resume_id}.", markup=False)
 
 
 @resume_app.command("pin")

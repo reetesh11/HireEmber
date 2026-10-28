@@ -339,7 +339,7 @@ def judge_tailored_resume(
 
 def tailor_resume(
     resume_text: str, job: dict, profile: dict,
-    max_retries: int = 3, validation_mode: str = "normal",
+    max_retries: int = 3, validation_mode: str = "normal", resume_context: str = "",
 ) -> tuple[str, dict]:
     """Generate a tailored resume via JSON output + fresh context on each retry.
 
@@ -388,9 +388,10 @@ def tailor_resume(
                 f"- {n}" for n in avoid_notes[-5:]
             )
 
+        context = f"{resume_context}\n\n---\n\n" if resume_context else ""
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": f"ORIGINAL RESUME:\n{resume_text}\n\n---\n\nTARGET JOB:\n{job_text}\n\nReturn the JSON:"},
+            {"role": "user", "content": f"ORIGINAL RESUME:\n{resume_text}\n\n---\n\n{context}TARGET JOB:\n{job_text}\n\nReturn the JSON:"},
         ]
 
         raw = client.chat(messages, max_tokens=2048, temperature=0.4)

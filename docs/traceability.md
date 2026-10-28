@@ -98,3 +98,17 @@ under "Traceability known exceptions". None.
 
 | Requirement | Reason |
 | --- | --- |
+
+## Resume library (phase 7)
+
+These requirement IDs come from the phase 7 task, not the requirements document.
+
+| ID | Description | Tests |
+| --- | --- | --- |
+| RES-1 | The user can add a resume from a .pdf, .txt or .docx file with a name and optional tags, on the dashboard or the command line. | `tests/acceptance/test_p7_ac1_upload_api.py`, `tests/acceptance/test_p7_ac2_ui_form.py`, `tests/acceptance/test_p7_ac3_docx_cli.py`, `tests/unit/test_web_resume_upload.py` |
+| RES-2 | Uploads are checked for format, emptiness, the 10 MB limit, a name and duplicates, and nothing is stored on a refusal. | `tests/acceptance/test_p7_ac1_upload_api.py`, `tests/acceptance/test_p7_ac10_sanitise_logging.py`, `tests/unit/test_resumes_library.py` |
+| RES-3 | When a resume is added or its file replaced, the system extracts the text locally and stores sections and bounded chunks. | `tests/acceptance/test_p7_ac4_extraction.py`, `tests/acceptance/test_p7_ac5_store.py`, `tests/unit/test_resume_index.py`, `tests/unit/test_resume_extract.py` |
+| RES-4 | The user can search resume chunks by keyword and get ranked results with resume and section. | `tests/acceptance/test_p7_ac6_search.py`, `tests/unit/test_resume_index.py` |
+| RES-5 | Scoring, tailoring and form-filling prompts include the best matching chunks, and are unchanged when there are none. | `tests/acceptance/test_p7_ac7_prompts.py`, `tests/acceptance/test_p7_ac11_unchanged.py`, `tests/unit/test_resume_context.py` |
+| RES-6 | Each resume shows its extraction status and chunk count, and extraction can be re-run. | `tests/acceptance/test_p7_ac8_status.py`, `tests/unit/test_cli_resume_docx.py` |
+| RES-7 | Deleting a resume removes its file, text copy and chunks, and is refused while a ticket uses it. | `tests/acceptance/test_p7_ac9_delete.py`, `tests/unit/test_resumes_library.py` |

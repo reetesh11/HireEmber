@@ -195,6 +195,46 @@ def ensure_phase6_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_RESUME_CHUNKS = """CREATE TABLE IF NOT EXISTS resume_chunks (
+    id INTEGER PRIMARY KEY,
+    resume_id INTEGER NOT NULL,
+    section TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    text TEXT NOT NULL
+)"""
+
+_RESUME_FTS = [
+    "CREATE VIRTUAL TABLE IF NOT EXISTS resume_chunks_fts USING fts5("
+    "text, content='resume_chunks', content_rowid='id')",
+    """CREATE TRIGGER IF NOT EXISTS resume_chunks_ai AFTER INSERT ON resume_chunks BEGIN
+        INSERT INTO resume_chunks_fts(rowid, text) VALUES (new.id, new.text);
+    END""",
+    """CREATE TRIGGER IF NOT EXISTS resume_chunks_ad AFTER DELETE ON resume_chunks BEGIN
+        INSERT INTO resume_chunks_fts(resume_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    END""",
+    """CREATE TRIGGER IF NOT EXISTS resume_chunks_au AFTER UPDATE ON resume_chunks BEGIN
+        INSERT INTO resume_chunks_fts(resume_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+        INSERT INTO resume_chunks_fts(rowid, text) VALUES (new.id, new.text);
+    END""",
+]
+
+
+def ensure_phase7_schema(conn: sqlite3.Connection) -> None:
+    """Add resume extraction status columns and the chunk store with its FTS5 index (idempotent)."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(resumes)")}
+    for name in ("extract_status", "extract_reason"):
+        if name not in existing:
+            conn.execute(f"ALTER TABLE resumes ADD COLUMN {name} TEXT")
+    conn.execute(_RESUME_CHUNKS)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_resume_chunks_resume ON resume_chunks(resume_id)")
+    try:
+        for stmt in _RESUME_FTS:
+            conn.execute(stmt)
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError(f"SQLite FTS5 is required for the resume library but is unavailable: {exc}") from exc
+    conn.commit()
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     """Create the eight new tables and indexes (idempotent), then the phase 3 and 5 additions."""
     for stmt in _SCHEMA.split(";"):
@@ -204,6 +244,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
     ensure_phase3_schema(conn)
     ensure_phase5_schema(conn)
     ensure_phase6_schema(conn)
+    ensure_phase7_schema(conn)
 
 
 def backfill_jobs(conn: sqlite3.Connection) -> None:

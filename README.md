@@ -41,7 +41,7 @@ hireember apply -w 3     # parallel apply (3 Chrome instances)
 hireember apply --dry-run   # fill forms without submitting
 ```
 
-`hireember init` asks for one resume file (.txt or .pdf). A PDF is read locally into an editable `resume.txt` in the data folder, and the name, contact and location found in it are offered as defaults in the profile step.
+`hireember init` asks for one resume file (.pdf, .txt or .docx). A PDF is read locally into an editable `resume.txt` in the data folder, and the name, contact and location found in it are offered as defaults in the profile step.
 
 > `pip install hireember` is enough: job board scraping (`python-jobspy`) installs with it. Run `hireember doctor` afterwards to check the rest.
 
@@ -52,7 +52,7 @@ hireember apply --dry-run   # fill forms without submitting
 You do not edit any code. You need Python 3.11 or later and a model API key (Gemini has a free tier).
 
 1. Install: `pip install hireember`.
-2. Run `hireember init`. It asks for your resume (.txt or .pdf), your profile, your job search and your API key.
+2. Run `hireember init`. It asks for your resume (.pdf, .txt or .docx), your profile, your job search and your API key.
 3. Run `hireember doctor` and fix anything it reports as missing.
 4. Run the discovery stage: `hireember run discover`. It searches the companies and job boards you set up.
 5. Run the scoring stage: `hireember run score`. Each job gets a score from 1 to 10 and a short reason, and a ticket.
@@ -249,12 +249,26 @@ hireember queue answer 3 "Blue"         # Answer queued item 3 and resume its ti
 hireember resume add cv.txt --name "Backend" --tags "backend,python"
 hireember resume list                   # Base resumes
 hireember resume pin 1                  # Always use resume 1 (hireember resume unpin to clear)
+hireember resume delete 2               # Remove resume 2 (refused while a ticket uses it)
 ```
 
 Scoring now needs at least one base resume: run `hireember resume add` first, or tickets are
 blocked with `no base resume`. For a PDF, add a plain-text copy with `--text cv.txt` so it can be scored.
 Passwords, tokens, payment details and government IDs are never stored; questions that ask for them
 are queued and the ticket stays blocked for you.
+
+### Resume library
+
+Add base resumes as `.pdf`, `.txt` or `.docx` files (up to 10 MB), from the dashboard Resumes tab or with
+`hireember resume add`. Each resume is read into text, split into sections (summary, experience, education,
+skills) and short chunks, and stored in the local database with a keyword search index. Scoring, tailoring
+and form-filling add the chunks that best match the job to their prompts (5 by default; set the
+`resume_context_chunks` setting to change it). The Resumes tab shows each resume's extraction status and chunk
+count, and lets you re-extract, replace the file or delete it. A scanned PDF has no text layer: there is no OCR,
+so add a text copy (`--text`) or a text-based PDF. `.docx` reading uses the `python-docx` package, installed
+with HireEmber.
+
+Resume text extraction and search run entirely on your machine. Resume text leaves it only inside the prompts the pipeline already sends to your configured model.
 
 ---
 

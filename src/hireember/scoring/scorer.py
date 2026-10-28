@@ -85,13 +85,14 @@ def _preferences_text(profile: dict | None) -> str:
     return f"CANDIDATE PREFERENCES:\n{body}\n\n---\n\n" if body else ""
 
 
-def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
+def score_job(resume_text: str, job: dict, profile: dict | None = None, resume_context: str = "") -> dict:
     """Score a single job against the resume.
 
     Args:
         resume_text: The candidate's full resume text.
         job: Job dict with keys: title, site, location, full_description.
         profile: Optional profile; its target roles, location and experience level join the prompt.
+        resume_context: Optional best-matching resume excerpts, placed after the resume text.
 
     Returns:
         {"score": int, "keywords": str, "reasoning": str}
@@ -103,9 +104,10 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
 
+    context = f"{resume_context}\n\n---\n\n" if resume_context else ""
     messages = [
         {"role": "system", "content": SCORE_PROMPT},
-        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\n{_preferences_text(profile)}JOB POSTING:\n{job_text}"},
+        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\n{context}{_preferences_text(profile)}JOB POSTING:\n{job_text}"},
     ]
 
     try:

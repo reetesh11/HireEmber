@@ -45,11 +45,11 @@ def test_add_errors(conn, tmp_path):
     with pytest.raises(ResumeError) as exc:
         add_resume(conn, tmp_path / "missing.txt", "Other")
     assert str(exc.value) == f"File not found: {tmp_path / 'missing.txt'}."
-    doc = tmp_path / "cv.docx"
+    doc = tmp_path / "cv.doc"
     doc.write_text("x")
     with pytest.raises(ResumeError) as exc:
         add_resume(conn, doc, "Doc")
-    assert str(exc.value) == "Unsupported format. Provide a .txt or .pdf file."
+    assert str(exc.value) == "Unsupported format. Provide a .pdf, .txt or .docx file."
     txt = tmp_path / "again.txt"
     txt.write_text("y")
     with pytest.raises(ResumeError) as exc:

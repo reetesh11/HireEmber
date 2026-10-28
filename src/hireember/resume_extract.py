@@ -28,6 +28,30 @@ def extract_pdf_text(path: str | Path) -> str:
         return ""
 
 
+def extract_docx_text(path: str | Path) -> str:
+    """Body paragraphs and table cells in document order (cells tab-joined). Local only.
+
+    Raises ValueError("this .docx file could not be read.") on a corrupt or unreadable file.
+    """
+    try:
+        from docx import Document
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+
+        doc = Document(str(path))
+        lines: list[str] = []
+        for child in doc.element.body.iterchildren():
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "p":
+                lines.append(Paragraph(child, doc).text)
+            elif tag == "tbl":
+                for row in Table(child, doc).rows:
+                    lines.append("\t".join(cell.text.replace("\n", " ") for cell in row.cells))
+        return "\n".join(lines)
+    except Exception as exc:
+        raise ValueError("this .docx file could not be read.") from exc
+
+
 def _single(matches: list[str], key=lambda s: s.lower()) -> str | None:
     distinct = {key(m) for m in matches}
     return matches[0] if len(distinct) == 1 else None
