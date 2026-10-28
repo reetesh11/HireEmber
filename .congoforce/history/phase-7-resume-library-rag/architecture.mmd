@@ -1,0 +1,20 @@
+flowchart LR
+  ui[web/static/index.html Resumes tab]:::changed -->|POST /api/resumes, /extract, /file, DELETE| srv[web/server.py]:::changed
+  cli[cli.py resume add/list/delete]:::changed --> res[resumes.py]:::changed
+  srv --> res
+  res -->|extract_text| ext[resume_extract.py + docx reader]:::changed
+  ext --> docxlib[python-docx / pypdf]:::new
+  res -->|sections, chunks, search| idx[resume_index.py]:::new
+  idx --> chunks[(resume_chunks + resume_chunks_fts)]:::new
+  res --> rtab[(resumes: extract_status, extract_reason)]:::changed
+  mig[migration.py ensure_phase7_schema]:::changed --> chunks
+  mig --> rtab
+  res -->|files + .txt copy| disk[(base_resumes folder)]
+  gate[gating.py]:::changed -->|context_block| res
+  launch[apply/launcher.py]:::changed -->|context_block| res
+  gate --> scorer[scoring/scorer.py]:::changed
+  gate --> tailor[scoring/tailor.py]:::changed
+  launch --> prompt[apply/prompt.py]:::changed
+  res -->|N| settings[(settings: resume_context_chunks)]
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706

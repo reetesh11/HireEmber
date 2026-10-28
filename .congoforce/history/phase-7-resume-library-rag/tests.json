@@ -1,0 +1,89 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p7_ac1_upload_api.py",
+      "tests": 25,
+      "expect_red": true,
+      "description": "POST /api/resumes via raw and multipart: success for txt/docx/pdf, refusals (extension, empty, 10 MB boundary, 413, blank name, duplicate) store nothing"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p7_ac2_ui_form.py",
+      "tests": 3,
+      "expect_red": true,
+      "description": "served dashboard page contains the Add resume form controls, upload states, toast and new empty-state text"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p7_ac3_docx_cli.py",
+      "tests": 8,
+      "expect_red": true,
+      "description": "CLI add of .docx, corrupt docx kept as failed, help texts, extract_docx_text paragraphs and tables, dependency in pyproject and uv.lock"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p7_ac4_extraction.py",
+      "tests": 16,
+      "expect_red": true,
+      "description": "split_sections, chunk_text bounds, replace_chunks positions, text copy, re-extract and replace replace old chunks"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p7_ac5_store.py",
+      "tests": 3,
+      "expect_red": true,
+      "description": "resume_chunks table and FTS5 index from migration, survives re-init, add and search work with sockets disabled"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p7_ac6_search.py",
+      "tests": 31,
+      "expect_red": true,
+      "description": "resumes.search shape, ranking, scoping, limit, blank/unusable queries, FTS special characters never raise"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p7_ac7_prompts.py",
+      "tests": 11,
+      "expect_red": true,
+      "description": "context_block format and N setting; resume_context hooks in score_job, tailor_resume, build_prompt; chunks reach scoring and tailoring prompts through gating"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p7_ac8_status.py",
+      "tests": 14,
+      "expect_red": true,
+      "description": "extraction status, reasons and chunk count in list, API and CLI; extract_resume; /extract endpoint; replace re-extracts; UI strings"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p7_ac9_delete.py",
+      "tests": 10,
+      "expect_red": true,
+      "description": "delete_resume, DELETE endpoint and CLI remove file, text copy, chunks and FTS entries; ticket-used resume protected"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p7_ac10_sanitise_logging.py",
+      "tests": 15,
+      "expect_red": true,
+      "description": "path parts dropped for raw and multipart uploads and add_resume_bytes; resume text absent from INFO+ logs, error bodies and reasons"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p7_ac11_unchanged.py",
+      "tests": 7,
+      "expect_red": false,
+      "description": "uniqueness, pin, unpin, choose, get_resume_text unchanged; prompts byte-identical for a resume with no chunks"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p7_ac12_docs.py",
+      "tests": 10,
+      "expect_red": true,
+      "description": "README privacy note verbatim, formats, 10 MB, no OCR; traceability lists RES-1..RES-7 with tests"
+    }
+  ],
+  "untestable": []
+}
