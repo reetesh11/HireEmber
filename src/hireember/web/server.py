@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-import tempfile
 import webbrowser
 from dataclasses import asdict
 from datetime import date
+from email import policy as email_policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from hireember import answers, database, logs, resumes, runs, tickets
 from hireember.web import queries
@@ -113,11 +114,35 @@ def _answers(conn):
         for a in answers.list_answers(conn)]}
 
 
+def _resume_json(r: dict) -> dict:
+    return {"id": r["id"], "name": r["name"], "tags": r["tags"], "pinned": r["pinned"],
+            "file_name": Path(r["file_path"] or "").name, "extract_status": r["extract_status"],
+            "extract_reason": r["extract_reason"], "chunk_count": r["chunk_count"]}
+
+
 def _resumes(conn):
-    return {"resumes": [
-        {"id": r["id"], "name": r["name"], "tags": r["tags"], "pinned": r["pinned"],
-         "file_name": Path(r["file_path"] or "").name}
-        for r in resumes.list_resumes(conn)]}
+    return {"resumes": [_resume_json(r) for r in resumes.list_resumes(conn)]}
+
+
+def _resume_by_id(conn, resume_id: int) -> dict:
+    for r in resumes.list_resumes(conn):
+        if r["id"] == resume_id:
+            return _resume_json(r)
+    raise resumes.ResumeError(f"No resume with id {resume_id}.")
+
+
+def _parse_multipart(content_type: str, body: bytes) -> dict:
+    """Parts of a multipart/form-data body: name -> (filename or None, bytes)."""
+    message = BytesParser(policy=email_policy.HTTP).parsebytes(
+        b"Content-Type: " + content_type.encode("latin-1", "replace") + b"\r\nMIME-Version: 1.0\r\n\r\n" + body)
+    if not message.is_multipart():
+        raise ApiError(400, "The upload could not be read.", "bad_request")
+    parts = {}
+    for part in message.iter_parts():
+        field = part.get_param("name", header="content-disposition")
+        if field:
+            parts[str(field)] = (part.get_filename(), part.get_payload(decode=True) or b"")
+    return parts
 
 
 def _text(body: dict, key: str) -> str:
@@ -202,14 +227,28 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, status: int, payload) -> None:
         self._send(status, json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
 
-    def _read_body(self) -> bytes:
+    def _read_body(self, limit: int = MAX_BODY, message: str = "Request is too large (max 10 MB).") -> bytes:
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise ApiError(400, "Invalid Content-Length.", "bad_request") from None
-        if length > MAX_BODY:
-            raise ApiError(413, "Request is too large (max 10 MB).", "too_large")
+        if length > limit:
+            if limit > MAX_BODY:
+                self._drain(length)
+            raise ApiError(413, message, "too_large")
         return self.rfile.read(length) if length else b""
+
+    def _drain(self, length: int) -> None:
+        """Read and discard an oversized upload so the client can still read our answer."""
+        remaining = min(length, 64 * MAX_BODY)
+        while remaining > 0:
+            chunk = self.rfile.read(min(65536, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
+    def _upload_body(self) -> bytes:
+        return self._read_body(MAX_BODY + 65536, "The file is larger than 10 MB.")
 
     def _json_body(self) -> dict:
         raw = self._read_body()
@@ -369,8 +408,20 @@ class Handler(BaseHTTPRequestHandler):
             resumes.update_resume_meta(conn, int(m.group(1)), _text(body, "name"),
                                        _text(body, "tags"))
             self._json(200, {"ok": True, "message": "Resume saved."})
+        elif method == "POST" and path == "/api/resumes":
+            self._add_resume(conn)
         elif method == "POST" and (m := re.fullmatch(r"/api/resumes/(\d+)/file", path)):
             self._replace_resume_file(conn, int(m.group(1)))
+        elif method == "POST" and (m := re.fullmatch(r"/api/resumes/(\d+)/extract", path)):
+            self._json_body()
+            result = resumes.extract_resume(conn, int(m.group(1)))
+            ok = result.status == "extracted"
+            message = (f"Extraction finished: {result.chunks} chunks." if ok
+                       else f"Extraction failed: {result.reason}")
+            self._json(200, {"ok": ok, "message": message, "resume": _resume_by_id(conn, int(m.group(1)))})
+        elif method == "DELETE" and (m := re.fullmatch(r"/api/resumes/(\d+)", path)):
+            resumes.delete_resume(conn, int(m.group(1)))
+            self._json(200, {"ok": True})
         else:
             raise ApiError(404, "Not found.", "not_found")
 
@@ -387,14 +438,34 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(409, str(exc), "run_in_progress") from None
         self._json(202, {"started": True, "stage": stage})
 
+    def _add_resume(self, conn) -> None:
+        """Create a resume from a raw body (X-* headers) or a multipart form. Errors are {"error": ...}."""
+        try:
+            data = self._upload_body()
+            content_type = self.headers.get("Content-Type", "")
+            if content_type.lower().startswith("multipart/form-data"):
+                parts = _parse_multipart(content_type, data)
+                filename, data = parts.get("file", (None, b""))
+                fields = {k: v[1].decode("utf-8", "replace") for k, v in parts.items() if k != "file"}
+                name, tags = fields.get("name", ""), fields.get("tags", "")
+            else:
+                filename = unquote(self.headers.get("X-Filename", ""))
+                name = unquote(self.headers.get("X-Name", ""))
+                tags = unquote(self.headers.get("X-Tags", ""))
+            new_id = resumes.add_resume_bytes(conn, filename or "", data, name, tags)
+        except ApiError as exc:
+            self._json(exc.status, {"error": exc.message})
+            return
+        except resumes.ResumeError as exc:
+            self._json(400, {"error": str(exc)})
+            return
+        self._json(201, _resume_by_id(conn, new_id))
+
     def _replace_resume_file(self, conn, resume_id: int) -> None:
-        name = Path(self.headers.get("X-Filename", "").replace("\\", "/")).name
-        data = self._read_body()
-        with tempfile.TemporaryDirectory(prefix="hireember-upload-") as tmp:
-            target = Path(tmp) / (name or "upload")
-            target.write_bytes(data)
-            resumes.update_resume(conn, resume_id, target)
-        self._json(200, {"ok": True, "message": "Resume file replaced."})
+        name = unquote(self.headers.get("X-Filename", ""))
+        resumes.replace_resume_file_bytes(conn, resume_id, name, self._upload_body())
+        self._json(200, {"ok": True, "message": "Resume file replaced.",
+                         "resume": _resume_by_id(conn, resume_id)})
 
     def do_GET(self):  # noqa: N802
         self._handle("GET")
