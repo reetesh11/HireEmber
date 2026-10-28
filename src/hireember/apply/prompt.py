@@ -216,7 +216,8 @@ def _build_hard_rules(profile: dict) -> str:
 
 def build_prompt(job: dict, tailored_resume: str,
                  cover_letter: str | None = None,
-                 dry_run: bool = False) -> str:
+                 dry_run: bool = False,
+                 resume_context: str = "") -> str:
     """Build the full instruction prompt for the apply agent.
 
     Loads the user profile and search config internally. All personal data
@@ -228,10 +229,13 @@ def build_prompt(job: dict, tailored_resume: str,
         tailored_resume: Plain-text content of the tailored resume.
         cover_letter: Optional plain-text cover letter content.
         dry_run: If True, tell the agent not to click Submit.
+        resume_context: Optional base-resume excerpts, shown after the resume text.
 
     Returns:
         Complete prompt string for the AI agent.
     """
+    excerpts = (f"== RESUME EXCERPTS (from your base resume, reference only) ==\n{resume_context}\n\n"
+                if resume_context else "")
     profile = config.load_profile()
     search_config = config.load_search_config()
     personal = profile["personal"]
@@ -312,7 +316,7 @@ Cover Letter PDF (upload if asked): {cl_upload_path or "N/A"}
 == RESUME TEXT (reference only) ==
 {tailored_resume}
 
-== COVER LETTER TEXT (paste if text field, upload PDF if file field) ==
+{excerpts}== COVER LETTER TEXT (paste if text field, upload PDF if file field) ==
 {cl_display}
 
 == APPLICANT PROFILE (reference only) ==

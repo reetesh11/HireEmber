@@ -24,6 +24,7 @@ from rich.live import Live
 
 from hireember import config, tickets, usage
 from hireember.database import get_connection
+from hireember.resumes import context_block
 from hireember.apply import chrome as chrome_mod
 from hireember.apply import prompt as prompt_mod
 from hireember.apply.runner import apply_ticket, recover_stale_tickets
@@ -229,6 +230,17 @@ def release_lock(url: str) -> None:
 # Utility modes (--gen, --mark-applied, --mark-failed, --reset-failed)
 # ---------------------------------------------------------------------------
 
+def _resume_context(job: dict, ticket: dict | None) -> str:
+    """Base-resume excerpts for the ticket's resume ("" when there is none)."""
+    try:
+        if not ticket or not ticket.get("resume_id"):
+            return ""
+        return context_block(get_connection(), ticket["resume_id"], job)
+    except Exception as exc:
+        logger.debug("resume context unavailable: %s", type(exc).__name__)
+        return ""
+
+
 def gen_prompt(target_url: str, min_score: int = 7,
                model: str = "sonnet", worker_id: int = 0) -> Path | None:
     """Generate a prompt file and print the Claude CLI command for manual debugging.
@@ -252,7 +264,9 @@ def gen_prompt(target_url: str, min_score: int = 7,
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
 
-    prompt = prompt_mod.build_prompt(job=job, tailored_resume=resume_text)
+    ticket = tickets.get_ticket_by_url(get_connection(), job["url"])
+    prompt = prompt_mod.build_prompt(job=job, tailored_resume=resume_text,
+                                     resume_context=_resume_context(job, ticket))
 
     # Release the lock so the job stays available
     release_lock(job["url"])
@@ -347,6 +361,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         job=job,
         tailored_resume=resume_text,
         dry_run=dry_run,
+        resume_context=_resume_context(job, tickets.get_ticket(get_connection(), session.ticket_id)),
     )
 
     # Write per-worker MCP config

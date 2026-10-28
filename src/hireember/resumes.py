@@ -12,7 +12,7 @@ from pathlib import Path
 
 from hireember import config, resume_index
 from hireember.resume_extract import extract_docx_text, extract_pdf_text
-from hireember.tickets import _now, normalize_text
+from hireember.tickets import _now, get_setting, normalize_text
 
 log = logging.getLogger(__name__)
 
@@ -276,6 +276,23 @@ def get_resume_text(conn: sqlite3.Connection, resume_id: int) -> str:
     if not path.is_file():
         raise ResumeError(NO_TEXT)
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def context_block(conn: sqlite3.Connection, resume_id: int, job: dict, n: int | None = None) -> str:
+    """Best-matching excerpts of one resume for a job, as a prompt block ("" when nothing matches)."""
+    if n is None:
+        try:
+            n = int(get_setting(conn, "resume_context_chunks", "5"))
+        except (TypeError, ValueError):
+            n = 5
+        if n < 1:
+            n = 5
+    query = f"{job.get('title') or ''} {(job.get('full_description') or '')[:2000]}"
+    hits = search(conn, query, resume_id=resume_id, limit=n)
+    if not hits:
+        return ""
+    lines = [f"[{h['section']}] {' '.join(h['text'].split())}" for h in hits]
+    return "RELEVANT RESUME EXCERPTS (best matches for this job):\n" + "\n".join(lines)
 
 
 def choose_resume(conn: sqlite3.Connection, job: dict) -> int | None:

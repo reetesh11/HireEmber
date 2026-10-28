@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from hireember import tickets, usage
 from hireember.config import COVER_LETTER_DIR, TAILORED_DIR, load_profile
 from hireember.location import location_skip_reason
-from hireember.resumes import ResumeError, choose_resume, get_resume_text
+from hireember.resumes import ResumeError, choose_resume, context_block, get_resume_text
 from hireember.scoring import cover_letter, scorer, tailor
 from hireember.scoring.pdf import convert_to_pdf
 
@@ -42,6 +42,12 @@ def _result(conn: sqlite3.Connection, ticket_id: int) -> GateResult:
     t = tickets.get_ticket(conn, ticket_id)
     return GateResult(ticket_id, t["status"], t["status_reason"] or "", t["score"], t["resume_id"],
                       t["tailored_resume_path"], t["cover_letter_path"])
+
+
+def _context_kwargs(conn: sqlite3.Connection, resume_id: int, job: dict) -> dict:
+    """``resume_context`` for the scoring and tailoring calls, only when there are excerpts."""
+    block = context_block(conn, resume_id, job)
+    return {"resume_context": block} if block else {}
 
 
 def _block(conn: sqlite3.Connection, url: str, reason: str, resume_id: int | None) -> GateResult:
@@ -78,7 +84,7 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
         return _block(conn, url, str(e), resume_id)
 
     with usage.collect() as spent:
-        result = scorer.score_job(resume_text, job, profile)
+        result = scorer.score_job(resume_text, job, profile, **_context_kwargs(conn, resume_id, job))
     if not result["score"]:
         reason = result["reasoning"] or ""
         if not reason.startswith("LLM error"):
@@ -137,7 +143,8 @@ def tailor_ticket(conn: sqlite3.Connection, ticket_id: int, *, profile: dict | N
         try:
             tailored, report = tailor.tailor_resume(resume_text, job, profile,
                                                     max_retries=max_retries,
-                                                    validation_mode=validation_mode)
+                                                    validation_mode=validation_mode,
+                                                    **_context_kwargs(conn, ticket["resume_id"], job))
             if report["status"] not in ("approved", "approved_with_judge_warning"):
                 return block(_fail_reason(report))
             letter = cover_letter.generate_cover_letter(tailored, job, profile,
