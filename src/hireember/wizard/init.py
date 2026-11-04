@@ -217,6 +217,24 @@ def run_profile_step(conn, ask: Callable[..., str] | None = None, *, console: Co
 # Search config
 # ---------------------------------------------------------------------------
 
+def _title_proposal(roles: list[str]) -> tuple[list[str], list[str]]:
+    """Title lists to write: non-empty lists already in searches.yaml win over the proposal."""
+    from hireember import search_config
+    from hireember.titles import propose_title_lists
+
+    try:
+        target_role = (config.load_profile().get("experience") or {}).get("target_role") or ""
+    except (OSError, ValueError, AttributeError):
+        target_role = ""
+    try:
+        resume_text = config.RESUME_PATH.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        resume_text = ""
+    include, exclude = propose_title_lists(roles, str(target_role), resume_text)
+    kept_include, kept_exclude = search_config.title_lists(search_config.load())
+    return kept_include or include, kept_exclude or exclude
+
+
 def _setup_searches(ask: Callable[..., str] | None = None, out: Console | None = None) -> None:
     """Generate a searches.yaml from user input."""
     console = out or globals()["console"]
@@ -242,6 +260,8 @@ def _setup_searches(ask: Callable[..., str] | None = None, out: Console | None =
         console.print("[yellow]No roles provided. Using a default set.[/yellow]")
         roles = ["Software Engineer"]
 
+    include, exclude = _title_proposal(roles)
+
     # Build YAML content
     lines = [
         "# HireEmber search configuration",
@@ -263,8 +283,12 @@ def _setup_searches(ask: Callable[..., str] | None = None, out: Console | None =
         lines.append(f'  - query: "{role}"')
         lines.append(f"    tier: {min(i + 1, 3)}")
 
+    for key, items in (("title_include", include), ("title_exclude", exclude)):
+        lines += [""] + ([f"{key}:"] + [f"  - {json.dumps(t)}" for t in items] if items else [f"{key}: []"])
+
     SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     console.print(f"[green]Search config saved to {SEARCH_CONFIG_PATH}[/green]")
+    console.print("Proposed target roles and hard-no titles. Edit them in the dashboard Profile tab.")
 
 
 # ---------------------------------------------------------------------------
