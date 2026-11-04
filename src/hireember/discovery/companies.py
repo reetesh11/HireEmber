@@ -43,12 +43,9 @@ def workday_adapter(company: dict) -> list[dict]:
     employer = workday_employer(company["careers_url"], company["name"])
     search_cfg = config.load_search_config()
     queries = [q["query"] for q in search_cfg.get("queries", []) if q.get("query")] or [""]
-    accept, reject = workday._load_location_filter(search_cfg)
     seen: dict[str, dict] = {}
     for query in queries:
-        found = workday.search_employer(
-            company["name"], employer, query, location_filter=bool(accept or reject),
-            accept_locs=accept, reject_locs=reject)
+        found = workday.search_employer(company["name"], employer, query)
         for job in workday.fetch_details(employer, found):
             url = job.get("apply_url") or f"{employer['base_url']}/{employer['site_id']}{job.get('external_path', '')}"
             if url and url not in seen:
