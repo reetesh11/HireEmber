@@ -16,6 +16,10 @@ KEY_PATTERNS = (
 )
 
 
+# Phase 10 AC-13 plants a fake key on purpose to prove it never reaches the logs.
+ALLOWED_FIXTURE_FILES = {"tests/acceptance/test_p10_ac13_logs.py"}
+
+
 def _hits(text: str) -> list[str]:
     return [m.group(0)[:12] for p in KEY_PATTERNS for m in p.finditer(text)]
 
@@ -50,6 +54,8 @@ def test_no_tracked_file_contains_an_api_key():
     offenders = []
     for path in files:
         if not path.is_file():
+            continue
+        if str(path.relative_to(REPO_ROOT)) in ALLOWED_FIXTURE_FILES:
             continue
         data = path.read_bytes()
         if b"\0" in data:
