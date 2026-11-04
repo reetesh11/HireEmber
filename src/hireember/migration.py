@@ -141,6 +141,7 @@ _PHASE5_RUN_COLUMNS: tuple[tuple[str, str], ...] = (
     ("found", "INTEGER DEFAULT 0"), ("scored", "INTEGER DEFAULT 0"),
     ("skipped", "INTEGER DEFAULT 0"), ("tickets_created", "INTEGER DEFAULT 0"),
     ("tickets_blocked", "INTEGER DEFAULT 0"),
+    ("dropped_title", "INTEGER DEFAULT 0"), ("dropped_location", "INTEGER DEFAULT 0"),
 )
 
 _RUN_LOCK = """

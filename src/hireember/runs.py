@@ -52,6 +52,8 @@ class RunSummary:
     skipped: int
     tickets_created: int
     tickets_blocked: int
+    dropped_title: int = 0
+    dropped_location: int = 0
 
 
 @dataclass
@@ -168,14 +170,15 @@ def get_run_log(conn: sqlite3.Connection, run_id: int) -> list[dict]:
 
 
 _RUN_SELECT = ('SELECT id, kind, "trigger", status, started_at, ended_at, found, scored, skipped, '
-               "tickets_created, tickets_blocked FROM runs")
+               "tickets_created, tickets_blocked, dropped_title, dropped_location FROM runs")
 
 
 def _summary(r) -> RunSummary:
     return RunSummary(
         id=r[0], kind=r[1] or "", trigger=r[2] or "", status=r[3] or "", started_at=r[4] or "",
         ended_at=r[5], found=r[6] or 0, scored=r[7] or 0, skipped=r[8] or 0,
-        tickets_created=r[9] or 0, tickets_blocked=r[10] or 0)
+        tickets_created=r[9] or 0, tickets_blocked=r[10] or 0,
+        dropped_title=r[11] or 0, dropped_location=r[12] or 0)
 
 
 def list_runs(conn: sqlite3.Connection, limit: int = 50) -> list[RunSummary]:
@@ -220,7 +223,8 @@ def execute_run(trigger: str = "manual", *, stages: Stages | None = None, apply:
     token = acquire_lock(conn)
     run_id: int | None = None
     status = "interrupted"
-    counts = {"found": 0, "scored": 0, "skipped": 0, "created": 0, "blocked": 0}
+    counts = {"found": 0, "scored": 0, "skipped": 0, "created": 0, "blocked": 0,
+              "dropped_title": 0, "dropped_location": 0}
     try:
         if stages is None:
             from hireember.stages import default_stages
@@ -245,7 +249,11 @@ def execute_run(trigger: str = "manual", *, stages: Stages | None = None, apply:
                 log_event(conn, run_id, name, str(e) or type(e).__name__)
                 return {}
 
-        counts["found"] = _count(call("discover", stages.discover), "found")
+        discovered = call("discover", stages.discover)
+        counts["found"] = _count(discovered, "found")
+        dropped = discovered.get("dropped") if isinstance(discovered.get("dropped"), dict) else {}
+        counts["dropped_title"] = _count(dropped, "title")
+        counts["dropped_location"] = _count(dropped, "location")
         call("enrich", stages.enrich)
         scored = call("score", stages.score)
         counts["scored"], counts["skipped"] = _count(scored, "scored"), _count(scored, "skipped")
@@ -262,9 +270,11 @@ def execute_run(trigger: str = "manual", *, stages: Stages | None = None, apply:
         if run_id is not None:
             conn.execute(
                 "UPDATE runs SET ended_at = ?, status = ?, found = ?, scored = ?, skipped = ?, "
-                "tickets_created = ?, tickets_blocked = ?, summary = ? WHERE id = ?",
+                "tickets_created = ?, tickets_blocked = ?, dropped_title = ?, dropped_location = ?, "
+                "summary = ? WHERE id = ?",
                 (_utcnow().isoformat(), status, counts["found"], counts["scored"],
                  counts["skipped"], counts["created"], counts["blocked"],
+                 counts["dropped_title"], counts["dropped_location"],
                  f"found {counts['found']}, scored {counts['scored']}", run_id))
             conn.commit()
             logs.write_line(logs.run_log_path(run_id),
@@ -283,7 +293,11 @@ def _stage_result(stage: str, result: dict) -> StageResult:
         "tailor": f"tailor: {n('created')} tickets created, {n('blocked')} blocked.",
         "apply": f"apply: {n('submitted')} submitted.",
     }
-    return StageResult(stage, messages[stage], dict(result or {}))
+    message = messages[stage]
+    dropped = (result or {}).get("dropped")
+    if stage == "discover" and isinstance(dropped, dict) and any(dropped.values()) and result.get("hint"):
+        message += f" {result['hint']}"
+    return StageResult(stage, message, dict(result or {}))
 
 
 def _store_result(conn: sqlite3.Connection, result: StageResult) -> None:

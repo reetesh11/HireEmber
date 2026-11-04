@@ -318,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
                        "text/html; charset=utf-8")
         elif path == "/api/runs":
             self._json(200, {"runs": [
-                {**asdict(r), "log_url": f"/logs/runs/{r.id}",
+                {**{k: v for k, v in asdict(r).items() if not k.startswith("dropped_")},
+                 "log_url": f"/logs/runs/{r.id}",
                  "log_available": logs.run_log_path(r.id).is_file()}
                 for r in runs.list_runs(conn)]})
         elif path.startswith("/logs/"):

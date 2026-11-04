@@ -257,6 +257,13 @@ _RUN_COLUMNS = (("Started", "started_at"), ("Trigger", "trigger"), ("Status", "s
                 ("Tickets created", "tickets_created"), ("Tickets blocked", "tickets_blocked"))
 
 
+def _dropped_text(run: dict) -> str:
+    title, location = run.get("dropped_title") or 0, run.get("dropped_location") or 0
+    if not title + location:
+        return ""
+    return f"Dropped {title + location} ({title} title, {location} location)"
+
+
 def run_log_link_html(run_id: int) -> str:
     """A link to the run's log file, or "Log removed" when the file is gone."""
     if logs.run_log_path(run_id).is_file():
@@ -274,9 +281,10 @@ def runs_html(conn: sqlite3.Connection, fragment: bool = False, limit: int = 50)
     runs = [asdict(r) for r in list_runs(conn, limit)]
     if runs:
         head = "".join(f'<th scope="col">{escape(label)}</th>' for label, _ in _RUN_COLUMNS)
-        head += '<th scope="col">Log</th>'
+        head += '<th scope="col">Dropped</th><th scope="col">Log</th>'
         rows = "".join(
             "<tr>" + "".join(f"<td>{escape(str(r[key]))}</td>" for _, key in _RUN_COLUMNS)
+            + f"<td>{escape(_dropped_text(r))}</td>"
             + f"<td>{run_log_link_html(r['id'])}</td></tr>"
             for r in runs)
         body = f"<table><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>"
