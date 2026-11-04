@@ -1,0 +1,23 @@
+flowchart LR
+  ui[index.html Profile tab, Restore, Runs]:::changed -->|GET/PUT /api/profile| srv[web/server.py]:::changed
+  ui -->|POST /api/tickets/id/restore| srv
+  srv --> sc[search_config.py]:::new
+  sc --> yaml[(searches.yaml)]
+  sc --> pj[(profile.json)]
+  jobspy[discovery/jobspy.py]:::changed --> intake[intake.py]:::new
+  wd[discovery/workday.py]:::changed --> intake
+  se[discovery/smartextract.py]:::changed --> intake
+  comp[discovery/companies.py]:::changed --> intake
+  intake --> titles[titles.py]:::new
+  intake --> loc[location.py]:::changed
+  loc --> sc
+  intake --> sc
+  intake --> db[(jobs + tickets)]:::changed
+  comp --> runs[runs.py]:::changed
+  runs --> db
+  scorer[scoring/scorer.py]:::changed --> sc
+  gating[gating.py]:::changed --> tk[tickets.py]:::changed
+  doctor[doctor.py]:::changed --> sc
+  init[wizard/init.py]:::changed --> titles
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
