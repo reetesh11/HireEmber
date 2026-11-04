@@ -1,0 +1,184 @@
+"""Add jobs by URL: fetch and read a job page, store it as a manual job and open its ticket."""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
+from dataclasses import dataclass
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from hireember import runs, tickets
+from hireember.config import is_linkedin_url
+from hireember.database import store_jobs
+from hireember.enrichment.page import extract_with_ai, looks_like_login, parse_job_page
+from hireember.urlfetch import INVALID_REASON, SCHEME_REASON, FetchError, check_url, fetch_page
+
+log = logging.getLogger(__name__)
+
+TRACKING_PARAMS = ("gh_src", "source")  # plus any name starting with "utm_"
+
+LINKEDIN_REASON = "LinkedIn links are not supported because they need a signed-in session."
+LOGIN_REASON = "The page needs you to sign in, so the description could not be read."
+NO_DESCRIPTION_REASON = "No job description was found on the page."
+UNEXPECTED_REASON = "Something went wrong adding this link."
+ADDED_REASON = "added by link"
+DUPLICATE_REASON = "already added"
+
+
+def _is_tracking(name: str) -> bool:
+    low = name.lower()
+    return low.startswith("utm_") or low in TRACKING_PARAMS
+
+
+def normalize_url(url: str) -> str:
+    """Drop tracking parameters and the fragment, lower-case the host and strip a trailing slash."""
+    text = (url or "").strip()
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return text
+    if not parts.scheme or not parts.netloc:
+        return text
+    query = urlencode([(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                       if not _is_tracking(k)])
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), query, ""))
+
+
+@dataclass
+class AddResult:
+    status: str  # "added", "duplicate" or "failed"
+    job_url: str
+    ticket_id: int | None
+    reason: str = ""
+
+
+def _no_dns(*args, **kwargs):
+    raise OSError("name resolution is left to the fetch")
+
+
+def _precheck(url: str) -> str | None:
+    """The refusal reason for a URL that needs no network to judge, or None."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return INVALID_REASON
+    scheme = parts.scheme.lower()
+    if scheme and scheme not in ("http", "https"):
+        return SCHEME_REASON
+    if not scheme or not host:
+        return INVALID_REASON
+    if is_linkedin_url(url):
+        return LINKEDIN_REASON
+    return None
+
+
+def _find_existing(conn: sqlite3.Connection, url: str) -> dict | None:
+    """The stored job whose url or application_url matches ``url`` after normalisation."""
+    host = (urlsplit(url).hostname or "").lower()
+    rows = conn.execute(
+        "SELECT url, application_url, full_description FROM jobs WHERE lower(url) LIKE ? "
+        "OR lower(application_url) LIKE ?", (f"%{host}%", f"%{host}%")).fetchall()
+    for row in rows:
+        if url in (normalize_url(row[0]), normalize_url(row[1] or "")):
+            return {"url": row[0], "full_description": row[2]}
+    return None
+
+
+def _fail(conn: sqlite3.Connection, url: str, reason: str, *, store: bool) -> AddResult:
+    if not store:
+        return AddResult("failed", url, None, reason)
+    now = tickets._now()
+    store_jobs(conn, [{"url": url, "title": url}], urlsplit(url).hostname or "", "manual")
+    conn.execute("UPDATE jobs SET detail_scraped_at = COALESCE(detail_scraped_at, ?) WHERE url = ?", (now, url))
+    conn.commit()
+    ticket_id = tickets.open_ticket(conn, url, "blocked for human", reason)
+    runs.enqueue_blocked(conn)
+    return AddResult("failed", url, ticket_id, reason)
+
+
+def _resolve_queue(conn: sqlite3.Connection, ticket_id: int) -> None:
+    conn.execute("UPDATE queue_items SET resolved_at = ? WHERE ticket_id = ? AND resolved_at IS NULL",
+                 (tickets._now(), ticket_id))
+    conn.commit()
+
+
+def _from_text(text: str) -> dict:
+    cleaned = text.strip()
+    first = cleaned.splitlines()[0].strip() if cleaned else ""
+    return {"title": first, "company": "", "location": "", "description": cleaned, "application_url": ""}
+
+
+def _add(conn: sqlite3.Connection, url: str, fetch, extract, text: str | None) -> AddResult:
+    refusal = _precheck(url)
+    if refusal:
+        return _fail(conn, url, refusal, store=False)
+
+    existing = _find_existing(conn, url)
+    job_url = url
+    if existing:
+        ticket = tickets.get_ticket_by_url(conn, existing["url"])
+        reopen = (text is not None and ticket is not None and ticket["status"] == "blocked for human"
+                  and not existing["full_description"])
+        if ticket is not None and not reopen:
+            return AddResult("duplicate", url, ticket["id"], DUPLICATE_REASON)
+        job_url = existing["url"]
+
+    if text is not None:
+        data = _from_text(text)
+    else:
+        refusal = check_url(url, resolver=_no_dns)
+        if refusal:
+            return _fail(conn, job_url, refusal, store=True)
+        try:
+            page = fetch(url)
+        except FetchError as e:
+            return _fail(conn, job_url, e.reason, store=True)
+        if looks_like_login(page.html, page.url):
+            return _fail(conn, job_url, LOGIN_REASON, store=True)
+        data = parse_job_page(page.html, page.url, extract=extract)
+        if data is None:
+            return _fail(conn, job_url, NO_DESCRIPTION_REASON, store=True)
+
+    host = urlsplit(url).hostname or ""
+    store_jobs(conn, [{"url": job_url, "title": data["title"], "location": data["location"],
+                       "company": data["company"]}], host, "manual")
+    conn.execute(
+        "UPDATE jobs SET title = COALESCE(NULLIF(?, ''), title), location = COALESCE(NULLIF(?, ''), location), "
+        "strategy = 'manual', full_description = ?, application_url = COALESCE(NULLIF(?, ''), application_url), "
+        "detail_scraped_at = ? WHERE url = ?",
+        (data["title"], data["location"], data["description"], data["application_url"], tickets._now(), job_url))
+    if data["company"]:
+        tickets.set_job_company(conn, job_url, data["company"])
+    conn.commit()
+
+    ticket = tickets.get_ticket_by_url(conn, job_url)
+    if ticket is None:
+        ticket_id = tickets.open_ticket(conn, job_url, "pending", ADDED_REASON)
+    else:
+        ticket_id = ticket["id"]
+        if ticket["status"] == "blocked for human":
+            tickets.set_status(conn, ticket_id, "pending", reason=ADDED_REASON)
+        _resolve_queue(conn, ticket_id)
+    return AddResult("added", job_url, ticket_id, "")
+
+
+def add_job_from_url(conn: sqlite3.Connection, url: str, *, fetch=None, extract=None,
+                     text: str | None = None) -> AddResult:
+    """Fetch and read one job page, store it as a manual job and open its ticket.
+
+    ``fetch(url)`` and ``extract(url, text)`` default to the real fetcher and AI extractor, looked up at call time.
+    """
+    norm = normalize_url(url)
+    fetch = fetch or fetch_page
+    extract = extract or extract_with_ai
+    try:
+        return _add(conn, norm, fetch, extract, text)
+    except Exception as e:  # noqa: BLE001 - one bad link must not stop the others
+        log.error("Adding a job link failed: %s", type(e).__name__)
+        log.debug("Adding %s failed", norm, exc_info=True)
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        return AddResult("failed", norm, None, UNEXPECTED_REASON)

@@ -13,7 +13,7 @@ from hireember.enrichment.detail import DESCRIPTION_SELECTORS, clean_description
 
 log = logging.getLogger(__name__)
 
-MIN_DESCRIPTION = 100
+MIN_DESCRIPTION = 50
 AI_TEXT_LIMIT = 12000
 
 TITLE_SELECTORS = ['[data-automation-id="jobPostingHeader"]', "h1"]
