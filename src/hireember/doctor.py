@@ -6,6 +6,7 @@ can call checks directly and the CLI only renders them.
 
 from __future__ import annotations
 
+import difflib
 import re
 import shutil
 import sqlite3
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from hireember import config
+from hireember import config, search_config
 
 MIN_PYTHON = (3, 11)
 MIN_NODE_MAJOR = 18
@@ -257,6 +258,44 @@ def check_llm_tiers() -> list[Check]:
     return checks
 
 
+_SUGGEST_KEYS = ("title_include", "title_exclude", "location", "locations", "queries")
+
+
+def _key_shape(key: str) -> tuple[str, ...]:
+    """A key's underscore-split tokens, sorted, with one trailing ``s`` stripped from each."""
+    return tuple(sorted(t[:-1] if t.endswith("s") else t for t in str(key).lower().split("_")))
+
+
+def _suggest_key(key: str) -> str | None:
+    for known in _SUGGEST_KEYS:
+        if _key_shape(known) == _key_shape(key):
+            return known
+    close = difflib.get_close_matches(str(key), _SUGGEST_KEYS, n=1, cutoff=0.8)
+    return close[0] if close else None
+
+
+def check_search_config_keys(cfg: dict | None = None) -> list[Check]:
+    """Warn about searches.yaml keys no code reads, and a query list with no title rules."""
+    if cfg is None:
+        cfg = search_config.load()
+    checks: list[Check] = []
+    for key in cfg:
+        if key in search_config.KNOWN_KEYS:
+            continue
+        note = f"Unknown config key '{key}' in searches.yaml (not read by any code)."
+        suggestion = _suggest_key(key)
+        if suggestion:
+            note += f" Did you mean '{suggestion}'?"
+        checks.append(Check("searches.yaml", "WARN", note))
+    include, exclude = search_config.title_lists(cfg)
+    if cfg.get("queries") and not include and not exclude:
+        checks.append(Check(
+            "searches.yaml", "WARN",
+            "Job-board queries are set but title_include and title_exclude are both empty; "
+            "discovery will keep every title."))
+    return checks
+
+
 def run_checks() -> list[Check]:
     """Run every doctor check, in display order."""
     return [
@@ -272,4 +311,5 @@ def run_checks() -> list[Check]:
         check_node(),
         check_database(),
         check_sources(),
+        *check_search_config_keys(),
     ]
