@@ -61,7 +61,9 @@ locations:
   - location: "Remote"
     remote: true
 
-# Location filtering -- accept/reject patterns for job location text
+# Location filtering -- accept/reject patterns for job location text.
+# Your city, region and country in profile.json (personal.city, personal.province_state,
+# personal.country) also count as accepted locations.
 location:
   accept_patterns:
     - "San Francisco"
@@ -82,10 +84,7 @@ location:
     - "India"
     - "Philippines"
 
-# Country for Indeed/Google Jobs searches
-country: "USA"
-
-# JobSpy source boards (all available options shown)
+# JobSpy source boards (`sites:` is the same setting under its other name)
 boards:
   - indeed
   - glassdoor
@@ -97,10 +96,17 @@ defaults:
   results_per_site: 100  # Max results per board per query
   hours_old: 72          # Only jobs posted within this many hours
 
-# Negative keywords -- skip jobs with these in the title (case-insensitive)
-exclude_titles:
+# Target roles -- keep a job only when its title contains one of these whole words or phrases
+# (case-insensitive). Leave empty to keep every title except the hard-no titles below.
+title_include:
+  - "software engineer"
+  - "engineer"
+  - "developer"
+
+# Hard-no titles -- drop jobs with one of these whole words or phrases in the title.
+# 'sales' matches "Sales Engineer" but not "Salesforce Developer".
+title_exclude:
   - "senior director"
-  - "VP "
   - "vice president"
   - "chief"
   - "intern"
@@ -109,3 +115,6 @@ exclude_titles:
   - "clearance required"
   - "TS/SCI"
   - "principal scientist"
+  - "sales"
+  - "recruiter"
+  - "program manager"

@@ -15,7 +15,7 @@ from hireember import config
 KNOWN_KEYS = frozenset({
     "queries", "locations", "location", "location_labels", "tiers", "proxy", "sites", "defaults",
     "glassdoor_location_map", "workday_max_tier", "workday_location_filter", "title_include",
-    "title_exclude", "exclude_titles", "location_accept", "location_reject_non_remote",
+    "title_exclude", "exclude_titles", "location_accept", "location_reject_non_remote", "boards",
 })
 
 

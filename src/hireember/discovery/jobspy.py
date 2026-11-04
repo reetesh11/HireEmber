@@ -463,7 +463,7 @@ def run_discovery(cfg: dict | None = None) -> dict:
                 "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     proxy = cfg.get("proxy")
-    sites = cfg.get("sites")
+    sites = cfg.get("sites") or cfg.get("boards")
     results_per_site = cfg.get("defaults", {}).get("results_per_site", 100)
     hours_old = cfg.get("defaults", {}).get("hours_old", 72)
     tiers = cfg.get("tiers")

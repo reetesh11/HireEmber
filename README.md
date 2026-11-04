@@ -129,6 +129,18 @@ Your personal data in one structured file: contact info, work authorization, com
 ### `searches.yaml`
 Job search queries, target titles, locations, boards. Run multiple searches with different parameters.
 
+**Search rules and where they live.** Each rule has one home, and the dashboard **Profile** tab reads and writes exactly these places (other keys are left alone; YAML comments are lost when you save):
+
+| What | File and key |
+| --- | --- |
+| Target roles | `searches.yaml` `title_include` |
+| Hard-no titles | `searches.yaml` `title_exclude` (old name `exclude_titles` still read) |
+| Target and rejected locations | `searches.yaml` `location.accept_patterns` and `location.reject_patterns` (old `location_accept`, `location_reject_non_remote` still read; the `location` block wins) |
+| Remote jobs accepted | `searches.yaml` `locations[].remote` |
+| City, region, country | `profile.json` `personal.city`, `personal.province_state`, `personal.country` (also count as accepted locations) |
+
+Titles match whole words or phrases, ignoring case: `sales` matches "Sales Engineer" but not "Salesforce Developer". Every discovery path (job boards, Workday, careers pages) applies the same title and location rules before a job is stored. Dropped jobs are kept as `skipped` tickets with a reason starting `title:` or `location:`; they are hidden from the default Tickets view, shown with the status filter `skipped`, and **Restore** moves one back to `pending` (it is then exempt from the filters). The discover result and the Runs tab show how many jobs were dropped. `boards` is read as another name for `sites`. `hireember doctor` warns about keys no code reads.
+
 ### `.env`
 API keys and runtime config: `GEMINI_API_KEY`, `LLM_MODEL`.
 
