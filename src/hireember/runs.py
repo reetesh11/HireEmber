@@ -372,3 +372,28 @@ def start_stage_async(stage: str, *, stages: Stages | None = None, limit: int | 
     thread = threading.Thread(target=work, name=f"stage-{stage}", daemon=True)
     thread.start()
     return thread
+
+
+def start_task_async(name: str, work: Callable[[sqlite3.Connection], None], *,
+                     conn: sqlite3.Connection | None = None) -> threading.Thread:
+    """Take the lock now, then run ``work`` on its own connection in a daemon thread that releases it."""
+    conn = _conn(conn)
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    token = acquire_lock(conn)
+
+    def run() -> None:
+        from hireember.database import get_connection
+
+        own = get_connection(db_file) if db_file else conn
+        try:
+            work(own)
+        except Exception as e:  # noqa: BLE001 - reported through the log and the stored result
+            message = str(e) or type(e).__name__
+            log_event(own, None, name, message)
+            _store_result(own, StageResult(name, f"{name}: failed. {message}", {}))
+        finally:
+            release_lock(own, token)
+
+    thread = threading.Thread(target=run, name=f"task-{name}", daemon=True)
+    thread.start()
+    return thread
