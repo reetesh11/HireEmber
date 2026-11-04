@@ -354,6 +354,7 @@ def status() -> None:
     summary.add_row("Scored by LLM", str(stats["scored"]))
     summary.add_row("Pending scoring", str(stats["unscored"]))
     summary.add_row("Skipped by location", str(stats["location_skipped"]))
+    summary.add_row("Skipped by title", str(stats["title_skipped"]))
     summary.add_row("Tailored resumes", str(stats["tailored"]))
     summary.add_row("Pending tailoring (7+)", str(stats["untailored_eligible"]))
     summary.add_row("Cover letters", str(stats["with_cover_letter"]))

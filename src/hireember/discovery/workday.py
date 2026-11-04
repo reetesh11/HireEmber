@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,8 +23,10 @@ import yaml
 from hireember import config
 from hireember.config import CONFIG_DIR
 from hireember.database import get_connection, init_db
+from hireember.intake import DropTally, JobFilter, store_filtered
 
 log = logging.getLogger(__name__)
+_TALLY_LOCK = threading.Lock()
 
 
 # -- Employer registry from YAML --------------------------------------------
@@ -36,39 +39,6 @@ def load_employers() -> dict:
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return data.get("employers", {})
-
-
-# -- Location filtering from search config -----------------------------------
-
-def _load_location_filter(search_cfg: dict | None = None):
-    """Load location accept/reject lists from search config."""
-    if search_cfg is None:
-        search_cfg = config.load_search_config()
-
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter."""
-    if not location:
-        return True
-
-    loc = location.lower()
-
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    for r in reject:
-        if r.lower() in loc:
-            return False
-
-    for a in accept:
-        if a.lower() in loc:
-            return True
-
-    return False
 
 
 # -- HTML stripper -----------------------------------------------------------
@@ -190,12 +160,9 @@ def search_employer(
     employer_key: str,
     employer: dict,
     search_text: str,
-    location_filter: bool = True,
     max_results: int = 0,
-    accept_locs: list[str] | None = None,
-    reject_locs: list[str] | None = None,
 ) -> list[dict]:
-    """Search an employer, paginate through all results, optionally filter by location."""
+    """Search an employer and paginate through all results (filtering happens when storing)."""
     log.info("%s: searching \"%s\"...", employer["name"], search_text)
 
     all_jobs: list[dict] = []
@@ -221,10 +188,6 @@ def search_employer(
 
         for j in postings:
             loc = j.get("locationsText", "")
-            if location_filter and accept_locs is not None and reject_locs is not None:
-                if not _location_ok(loc, accept_locs, reject_locs):
-                    continue
-
             all_jobs.append({
                 "title": j.get("title", ""),
                 "location": loc,
@@ -245,8 +208,7 @@ def search_employer(
             all_jobs = all_jobs[:max_results]
             break
 
-    log.info("%s: %d jobs found%s", employer["name"], len(all_jobs),
-             " (filtered)" if location_filter else "")
+    log.info("%s: %d jobs found", employer["name"], len(all_jobs))
     return all_jobs
 
 
@@ -300,44 +262,50 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 
 # -- DB storage --------------------------------------------------------------
 
-def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
-    """Store corporate jobs in DB. Returns (new, existing)."""
+def _job_url(job: dict, employers: dict) -> str:
+    url = job.get("apply_url", "")
+    if not url:
+        emp = employers.get(job.get("employer_key", ""), {})
+        if emp and job.get("external_path"):
+            url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
+    return url
+
+
+def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict,
+                  flt: JobFilter | None = None, tally: DropTally | None = None) -> tuple[int, int]:
+    """Store corporate jobs through the title/location filter. Returns (new_kept, existing).
+
+    Dropped jobs are stored and marked as skipped; they are counted in ``tally``.
+    """
     now = datetime.now(timezone.utc).isoformat()
-    new = 0
-    existing = 0
-
+    flt = flt or JobFilter.load()
+    by_site: dict[str, list[dict]] = {}
+    details: dict[str, dict] = {}
     for job in jobs:
-        url = job.get("apply_url", "")
-        if not url:
-            emp = employers.get(job.get("employer_key", ""), {})
-            if emp and job.get("external_path"):
-                url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
-        if not url:
+        url = _job_url(job, employers)
+        if not url or config.is_linkedin_url(url):
             continue
-        if config.is_linkedin_url(url):
-            continue
-
-        description = job.get("full_description", "")
-        short_desc = description[:500] if description else None
-        full_description = description if len(description) > 200 else None
-        detail_scraped_at = now if full_description else None
-        detail_error = job.get("detail_error")
-
-        site = job.get("employer_name", "Corporate")
-        strategy = "workday_api"
-
-        try:
+        description = job.get("full_description", "") or ""
+        details[url] = {"full": description if len(description) > 200 else None,
+                        "error": job.get("detail_error")}
+        by_site.setdefault(job.get("employer_name", "Corporate"), []).append({
+            "url": url, "title": job.get("title"), "location": job.get("location"),
+            "description": description[:500] if description else None, "application_url": url})
+    new = existing = 0
+    for site, rows in by_site.items():
+        known = {r["url"] for r in rows
+                 if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (r["url"],)).fetchone()}
+        n, e, _ = store_filtered(conn, rows, site=site, strategy="workday_api", flt=flt, tally=tally,
+                                 now=now)
+        new, existing = new + n, existing + e
+        for r in rows:
+            if r["url"] in known:
+                continue
+            det = details[r["url"]]
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), None, short_desc, job.get("location"),
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error),
-            )
-            new += 1
-        except sqlite3.IntegrityError:
-            existing += 1
-
+                "UPDATE jobs SET application_url = ?, full_description = ?, detail_error = ?, "
+                "detail_scraped_at = COALESCE(detail_scraped_at, ?) WHERE url = ?",
+                (r["url"], det["full"], det["error"], now if det["full"] else None, r["url"]))
     conn.commit()
     return new, existing
 
@@ -346,9 +314,8 @@ def _process_one(
     employer_key: str,
     employers: dict,
     search_text: str,
-    location_filter: bool,
-    accept_locs: list[str],
-    reject_locs: list[str],
+    flt: JobFilter | None = None,
+    tally: DropTally | None = None,
 ) -> dict:
     """Search one employer, fetch details, store results."""
     emp = employers[employer_key]
@@ -356,18 +323,15 @@ def _process_one(
     try:
         jobs = search_employer(
             employer_key, emp, search_text,
-            location_filter=location_filter,
-            accept_locs=accept_locs,
-            reject_locs=reject_locs,
         )
     except Exception as e:
         log.error("%s: ERROR searching '%s': %s", emp["name"], search_text, e)
         return {"employer": emp["name"], "query": search_text,
-                "found": 0, "new": 0, "existing": 0, "error": str(e)}
+                "found": 0, "new": 0, "existing": 0, "dropped": 0, "error": str(e)}
 
     if not jobs:
         return {"employer": emp["name"], "query": search_text,
-                "found": 0, "new": 0, "existing": 0}
+                "found": 0, "new": 0, "existing": 0, "dropped": 0}
 
     try:
         jobs = fetch_details(emp, jobs)
@@ -375,11 +339,18 @@ def _process_one(
         log.error("%s: ERROR fetching details for '%s': %s", emp["name"], search_text, e)
 
     conn = get_connection()
-    new, existing = store_results(conn, jobs, employers)
-    log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
+    local = DropTally()
+    new, existing = store_results(conn, jobs, employers, flt, local)
+    dropped = local.total
+    if tally is not None:
+        with _TALLY_LOCK:
+            tally.items.extend(local.items)
+            for kind, n in local.counts.items():
+                tally.counts[kind] = tally.counts.get(kind, 0) + n
+    log.info("%s: %d new, %d already in DB, %d dropped", emp["name"], new, existing, dropped)
 
     return {"employer": emp["name"], "query": search_text,
-            "found": len(jobs), "new": new, "existing": existing}
+            "found": len(jobs), "new": new, "existing": existing, "dropped": dropped}
 
 
 # -- Main orchestrator -------------------------------------------------------
@@ -388,11 +359,10 @@ def scrape_employers(
     search_text: str,
     employers: dict,
     employer_keys: list[str] | None = None,
-    location_filter: bool = True,
     max_results: int = 0,
-    accept_locs: list[str] | None = None,
-    reject_locs: list[str] | None = None,
     workers: int = 1,
+    flt: JobFilter | None = None,
+    tally: DropTally | None = None,
 ) -> dict:
     """Run full scrape: search -> filter -> detail -> store.
 
@@ -402,10 +372,8 @@ def scrape_employers(
     if employer_keys is None:
         employer_keys = list(employers.keys())
 
-    if accept_locs is None:
-        accept_locs = []
-    if reject_locs is None:
-        reject_locs = []
+    flt = flt or JobFilter.load()
+    tally = tally if tally is not None else DropTally()
 
     # Ensure DB schema
     init_db()
@@ -413,6 +381,7 @@ def scrape_employers(
     total_new = 0
     total_existing = 0
     total_found = 0
+    total_dropped = 0
     errors = 0
     t0 = time.time()
 
@@ -425,7 +394,7 @@ def scrape_employers(
             futures = {
                 pool.submit(
                     _process_one, key, employers, search_text,
-                    location_filter, accept_locs, reject_locs,
+                    flt, tally,
                 ): key
                 for key in valid_keys
             }
@@ -435,6 +404,7 @@ def scrape_employers(
                 total_new += result["new"]
                 total_existing += result["existing"]
                 total_found += result["found"]
+                total_dropped += result["dropped"]
                 if "error" in result:
                     errors += 1
 
@@ -448,12 +418,13 @@ def scrape_employers(
         for key in valid_keys:
             result = _process_one(
                 key, employers, search_text,
-                location_filter, accept_locs, reject_locs,
+                flt, tally,
             )
             completed += 1
             total_new += result["new"]
             total_existing += result["existing"]
             total_found += result["found"]
+            total_dropped += result["dropped"]
             if "error" in result:
                 errors += 1
 
@@ -466,7 +437,8 @@ def scrape_employers(
     log.info("[%s] Done: %d found, %d new, %d dupes in %.0fs",
              search_text, total_found, total_new, total_existing, elapsed)
 
-    return {"found": total_found, "new": total_new, "existing": total_existing}
+    return {"found": total_found, "new": total_new, "existing": total_existing,
+            "dropped": total_dropped}
 
 
 # -- Public entry point ------------------------------------------------------
@@ -490,11 +462,11 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     if not employers:
         log.warning("No employers configured. Create config/employers.yaml.")
-        return {"found": 0, "new": 0, "existing": 0, "queries": 0}
+        return {"found": 0, "new": 0, "existing": 0, "queries": 0,
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     search_cfg = config.load_search_config()
     queries_cfg = search_cfg.get("queries", [])
-    accept_locs, reject_locs = _load_location_filter(search_cfg)
 
     # Default to tier 1-2 queries for workday scraping
     max_tier = search_cfg.get("workday_max_tier", 2)
@@ -506,13 +478,15 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     if not queries:
         log.warning("No search queries configured in searches.yaml.")
-        return {"found": 0, "new": 0, "existing": 0, "queries": 0}
+        return {"found": 0, "new": 0, "existing": 0, "queries": 0,
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     proxy = search_cfg.get("proxy")
     if proxy:
         setup_proxy(proxy)
 
-    location_filter = search_cfg.get("workday_location_filter", True)
+    flt = JobFilter.load(search_cfg)
+    tally = DropTally()
 
     log.info("Workday crawl: %d queries x %d employers (workers=%d)", len(queries), len(employers), workers)
 
@@ -525,10 +499,9 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
         result = scrape_employers(
             search_text=query,
             employers=employers,
-            location_filter=location_filter,
-            accept_locs=accept_locs,
-            reject_locs=reject_locs,
             workers=workers,
+            flt=flt,
+            tally=tally,
         )
         grand_new += result["new"]
         grand_existing += result["existing"]
@@ -542,4 +515,6 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
         "new": grand_new,
         "existing": grand_existing,
         "queries": len(queries),
+        "dropped": dict(tally.counts),
+        "hint": tally.hint(kept=grand_new),
     }

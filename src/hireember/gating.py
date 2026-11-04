@@ -68,7 +68,7 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
     job = dict(zip(row.keys(), tuple(row)))
 
     existing = tickets.get_ticket_by_url(conn, url)
-    if not (existing and existing["score"] is not None):
+    if not (existing and (existing["score"] is not None or tickets.is_restored(conn, existing["id"]))):
         reason = location_skip_reason(job.get("location"), profile)
         if reason:
             ticket_id = tickets.open_ticket(conn, url, "skipped", reason)
@@ -97,8 +97,9 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
     ticket_id = tickets.set_job_score(conn, url, result["score"], result["reasoning"] or "no reason given")
     usage.record_collected(conn, ticket_id, "scoring", spent)
     tickets.set_ticket_resume(conn, ticket_id, resume_id)
-    if prior and prior["score"] is None and prior["status"] == "blocked for human":
-        # An earlier attempt blocked before scoring; the score now decides the status.
+    if prior and prior["score"] is None and prior["status"] in ("blocked for human", "pending"):
+        # An earlier attempt blocked before scoring, or the ticket was restored unscored;
+        # the score now decides the status.
         threshold = tickets.get_threshold(conn)
         if result["score"] >= threshold:
             tickets.set_status(conn, ticket_id, "pending", reason=f"score {result['score']} meets threshold {threshold}")

@@ -9,6 +9,7 @@ import logging
 import re
 import time
 
+from hireember import search_config
 from hireember.config import load_profile
 from hireember.database import get_connection, get_jobs_by_stage
 from hireember.llm import get_client
@@ -69,6 +70,13 @@ def _parse_score_response(response: str) -> dict:
     return {"score": score, "keywords": keywords, "reasoning": reasoning}
 
 
+_ROLE_FAMILY_RULE = (
+    "\n\nROLE FAMILY RULE: The user message names a target role family. A job whose title or work is "
+    "outside that role family must score 1-3, and the reasoning must say it is outside the role family."
+)
+_ROLE_FAMILY_CAP = 3
+
+
 def _preferences_text(profile: dict | None) -> str:
     """Target roles, location and experience level from the profile, as prompt text."""
     if not profile:
@@ -105,15 +113,20 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None, resume_c
     )
 
     context = f"{resume_context}\n\n---\n\n" if resume_context else ""
+    include, _ = search_config.title_lists(search_config.load())
+    family = f"Target role family: {', '.join(include)}\n\n" if include else ""
     messages = [
-        {"role": "system", "content": SCORE_PROMPT},
-        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\n{context}{_preferences_text(profile)}JOB POSTING:\n{job_text}"},
+        {"role": "system", "content": SCORE_PROMPT + (_ROLE_FAMILY_RULE if include else "")},
+        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\n{context}{_preferences_text(profile)}{family}JOB POSTING:\n{job_text}"},
     ]
 
     try:
         client = get_client("fast")
         response = client.chat(messages, max_tokens=512, temperature=0.2)
-        return _parse_score_response(response)
+        result = _parse_score_response(response)
+        if include and "role family" in (result["reasoning"] or "").lower():
+            result["score"] = min(result["score"], _ROLE_FAMILY_CAP)
+        return result
     except Exception as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
         return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}

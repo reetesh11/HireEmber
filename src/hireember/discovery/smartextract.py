@@ -15,11 +15,9 @@ placeholders replaced from the user's search configuration.
 import json
 import logging
 import re
-import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
 import yaml
@@ -29,6 +27,7 @@ from playwright.sync_api import sync_playwright
 from hireember import config
 from hireember.config import CONFIG_DIR
 from hireember.database import init_db, get_stats
+from hireember.intake import DropTally, JobFilter, store_filtered
 from hireember.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -44,33 +43,6 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 
-# -- Location filtering -------------------------------------------------------
-
-def _load_location_filter(search_cfg: dict | None = None):
-    """Load location accept/reject lists from search config."""
-    if search_cfg is None:
-        search_cfg = config.load_search_config()
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter."""
-    if not location:
-        return True
-    loc = location.lower()
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-    for r in reject:
-        if r.lower() in loc:
-            return False
-    for a in accept:
-        if a.lower() in loc:
-            return True
-    return False
-
-
 # -- Site configuration from YAML --------------------------------------------
 
 def load_sites() -> list[dict]:
@@ -81,46 +53,6 @@ def load_sites() -> list[dict]:
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return data.get("sites", [])
-
-
-def _store_jobs_filtered(
-    conn: sqlite3.Connection,
-    jobs: list[dict],
-    site: str,
-    strategy: str,
-    accept_locs: list[str],
-    reject_locs: list[str],
-) -> tuple[int, int]:
-    """Store jobs with location filtering. Returns (new, existing)."""
-    now = datetime.now(timezone.utc).isoformat()
-    new = 0
-    existing = 0
-    filtered = 0
-
-    for job in jobs:
-        url = job.get("url")
-        if not url:
-            continue
-        if config.is_linkedin_url(url) or config.is_linkedin_url(job.get("application_url")):
-            continue
-        if not _location_ok(job.get("location"), accept_locs, reject_locs):
-            filtered += 1
-            continue
-        try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
-            )
-            new += 1
-        except sqlite3.IntegrityError:
-            existing += 1
-
-    if filtered:
-        log.info("Filtered %d jobs (wrong location)", filtered)
-    conn.commit()
-    return new, existing
 
 
 # -- Page intelligence collector ---------------------------------------------
@@ -1014,9 +946,8 @@ def build_scrape_targets(
 
 def _run_all(
     targets: list[dict],
-    accept_locs: list[str],
-    reject_locs: list[str],
     workers: int = 1,
+    flt: JobFilter | None = None,
 ) -> dict:
     """Run smart extract on all targets.
 
@@ -1031,17 +962,19 @@ def _run_all(
     results: list[dict] = []
     total_new = 0
     total_existing = 0
+    flt = flt or JobFilter.load()
+    tally = DropTally()
 
     def _process_result(r: dict, target: dict) -> None:
         nonlocal total_new, total_existing
         jobs = r.get("jobs", [])
         if jobs:
-            new, existing = _store_jobs_filtered(conn, jobs, target["name"],
-                                                  r.get("strategy", "?"),
-                                                  accept_locs, reject_locs)
+            new, existing, dropped = store_filtered(conn, jobs, site=target["name"],
+                                                    strategy=r.get("strategy", "?"),
+                                                    flt=flt, tally=tally)
             total_new += new
             total_existing += existing
-            log.info("DB: +%d new, %d already existed", new, existing)
+            log.info("DB: +%d new, %d already existed, %d dropped", new, existing, dropped)
 
     if workers > 1 and len(targets) > 1:
         # Parallel mode
@@ -1080,7 +1013,8 @@ def _run_all(
     log.info("%d/%d PASS", passed, len(results))
 
     return {"total_new": total_new, "total_existing": total_existing,
-            "passed": passed, "total": len(results)}
+            "passed": passed, "total": len(results), "dropped": dict(tally.counts),
+            "hint": tally.hint(kept=total_new)}
 
 
 # -- Public entry point ------------------------------------------------------
@@ -1102,17 +1036,16 @@ def run_smart_extract(
         Dict with stats: total_new, total_existing, passed, total.
     """
     search_cfg = config.load_search_config()
-    accept_locs, reject_locs = _load_location_filter(search_cfg)
-
     targets = build_scrape_targets(sites=sites, search_cfg=search_cfg)
 
     if not targets:
         log.warning("No scrape targets configured. Create config/sites.yaml and searches.yaml.")
-        return {"total_new": 0, "total_existing": 0, "passed": 0, "total": 0}
+        return {"total_new": 0, "total_existing": 0, "passed": 0, "total": 0,
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     search_sites = sum(1 for s in (sites or load_sites()) if s.get("type") == "search")
     static_sites = sum(1 for s in (sites or load_sites()) if s.get("type") != "search")
     log.info("Sites: %d searchable, %d static | Total targets: %d (workers=%d)",
              search_sites, static_sites, len(targets), workers)
 
-    return _run_all(targets, accept_locs, reject_locs, workers=workers)
+    return _run_all(targets, workers=workers, flt=JobFilter.load(search_cfg))

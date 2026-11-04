@@ -1,0 +1,103 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p9_ac1_titles.py",
+      "tests": 12,
+      "expect_red": true,
+      "description": "title_filter whole-word/phrase/case/empty rules and propose_title_lists (also the title half of AC-7)"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p9_ac2_paths.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "jobspy DataFrame, Workday and careers-page (company list) paths and store_filtered drop before insert with skipped row and reason"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p9_ac3_ac4_location.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "_location_ok removed from discovery; location_lists merges old and new keys, new block wins"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p9_ac4_location_unchanged.py",
+      "tests": 13,
+      "expect_red": false,
+      "description": "old/new keys identical results; CA, SF word-boundary and Calgary cases already hold in location.py and must keep holding"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p9_ac5_report.py",
+      "tests": 6,
+      "expect_red": true,
+      "description": "DropTally, run log (max 20), discover result dropped/hint, Runs tab Dropped column"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p9_ac6_restore.py",
+      "tests": 8,
+      "expect_red": true,
+      "description": "restore_dropped, POST restore route, list hiding and status filter, restored job scored, title_skipped stat"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p9_ac7_init.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "init writes title_include/title_exclude from resume and profile, keeps existing lists"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p9_ac8_settings.py",
+      "tests": 19,
+      "expect_red": true,
+      "description": "search_config read/save, canonical keys, atomic write, validation, Profile API, next-call visibility"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p9_ac9_ui.py",
+      "tests": 26,
+      "expect_red": true,
+      "description": "Profile tab, texts, control ids, Restore button and status filter in served index.html"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p9_ac10_scorer.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "scorer prompt has role family line and rule; role family reasoning caps score at 3"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p9_ac10_unchanged.py",
+      "tests": 1,
+      "expect_red": false,
+      "description": "empty title_include: no role-family line, no cap, SCORE_PROMPT unchanged"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p9_ac11_doctor.py",
+      "tests": 5,
+      "expect_red": true,
+      "description": "check_search_config_keys warns on unknown key and on queries with empty title lists"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p9_ac12_unchanged.py",
+      "tests": 11,
+      "expect_red": false,
+      "description": "remote, empty, placeholder locations, store_jobs and no-config discovery unchanged"
+    },
+    {
+      "criterion": "AC-13",
+      "file": "tests/acceptance/test_p9_ac13_docs.py",
+      "tests": 3,
+      "expect_red": true,
+      "description": "example yaml keys within KNOWN_KEYS; README and traceability document the table"
+    }
+  ],
+  "untestable": []
+}

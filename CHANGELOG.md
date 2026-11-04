@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Search precision** - discovery drops jobs by whole-word target roles (`title_include`), hard-no
+  titles (`title_exclude`) and location in every path (job boards, Workday, careers pages). Dropped
+  jobs are stored as skipped tickets with a reason, can be restored, and are counted in the discover
+  result and on the Runs tab. A new dashboard Profile tab edits these rules and where you live;
+  `hireember doctor` warns about unknown config keys; the scorer caps out-of-role-family jobs at 3.
 - **Release hardening** - a log file per run and per apply attempt (linked from the dashboard,
   pruned after 90 days), model and token totals per ticket stage, a README setup path,
   `docs/safety.md`, and a requirement-to-test traceability table covering every ID.

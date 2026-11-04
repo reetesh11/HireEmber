@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from hireember import answers, database, logs, resumes, runs, tickets
+from hireember import answers, database, logs, resumes, runs, search_config, tickets
 from hireember.web import queries
 
 DEFAULT_HOST = "127.0.0.1"
@@ -61,6 +61,7 @@ def _view_args(params: dict) -> tuple[queries.TicketFilters, str, str]:
         date_from=(params.get("date_from") or [""])[0].strip() or None,
         date_to=(params.get("date_to") or [""])[0].strip() or None,
         resume_id=_int_param(params, "resume_id", "Choose a resume from the list."),
+        status=(params.get("status") or [""])[0].strip() or None,
     )
     sort = (params.get("sort") or ["updated"])[0] or "updated"
     direction = (params.get("dir") or ["desc"])[0] or "desc"
@@ -73,6 +74,18 @@ def _list(conn, params: dict) -> tuple[list[dict], tuple]:
         return queries.list_tickets(conn, flt, sort, direction), (flt, sort, direction)
     except ValueError as exc:
         raise ApiError(400, str(exc), "bad_filter") from None
+
+
+def _profile_call(fn, *args):
+    """Run a search_config function and map its errors to API errors."""
+    try:
+        return fn(*args)
+    except search_config.SettingsError as exc:
+        raise ApiError(400, str(exc), "bad_request", field=exc.field) from None
+    except search_config.UnreadableConfigError as exc:
+        raise ApiError(422, str(exc), "unreadable") from None
+    except OSError as exc:
+        raise ApiError(500, f"Could not save: {exc}. Nothing was changed.", "save_failed") from None
 
 
 # -- GET routes -------------------------------------------------------------
@@ -299,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, _ticket_detail(conn, int(m.group(1))))
             except tickets.TicketNotFoundError as exc:
                 raise ApiError(404, str(exc), "not_found") from None
+        elif path == "/api/profile":
+            self._json(200, _profile_call(search_config.read_settings))
         elif path == "/api/blocked":
             self._json(200, _blocked(conn))
         elif path == "/api/updates":
@@ -318,7 +333,8 @@ class Handler(BaseHTTPRequestHandler):
                        "text/html; charset=utf-8")
         elif path == "/api/runs":
             self._json(200, {"runs": [
-                {**asdict(r), "log_url": f"/logs/runs/{r.id}",
+                {**{k: v for k, v in asdict(r).items() if not k.startswith("dropped_")},
+                 "log_url": f"/logs/runs/{r.id}",
                  "log_available": logs.run_log_path(r.id).is_file()}
                 for r in runs.list_runs(conn)]})
         elif path.startswith("/logs/"):
@@ -377,6 +393,18 @@ class Handler(BaseHTTPRequestHandler):
                            "not_found" if missing else "bad_request") from None
 
     def _write(self, conn, method: str, path: str) -> None:
+        if method == "PUT" and path == "/api/profile":
+            payload = self._json_body()
+            self._json(200, _profile_call(search_config.save_settings, payload))
+            return
+        if method == "POST" and (m := re.fullmatch(r"/api/tickets/(\d+)/restore", path)):
+            self._json_body()
+            try:
+                tickets.restore_dropped(conn, int(m.group(1)))
+            except tickets.NotRestorableError as exc:
+                raise ApiError(409, str(exc), "not_restorable") from None
+            self._json(200, _ticket_detail(conn, int(m.group(1))))
+            return
         if method == "POST" and (m := re.fullmatch(r"/api/tickets/(\d+)/status", path)):
             self._json(200, _change_status(conn, int(m.group(1)), self._json_body()))
         elif method == "POST" and (m := re.fullmatch(

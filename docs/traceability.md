@@ -112,3 +112,21 @@ These requirement IDs come from the phase 7 task, not the requirements document.
 | RES-5 | Scoring, tailoring and form-filling prompts include the best matching chunks, and are unchanged when there are none. | `tests/acceptance/test_p7_ac7_prompts.py`, `tests/acceptance/test_p7_ac11_unchanged.py`, `tests/unit/test_resume_context.py` |
 | RES-6 | Each resume shows its extraction status and chunk count, and extraction can be re-run. | `tests/acceptance/test_p7_ac8_status.py`, `tests/unit/test_cli_resume_docx.py` |
 | RES-7 | Deleting a resume removes its file, text copy and chunks, and is refused while a ticket uses it. | `tests/acceptance/test_p7_ac9_delete.py`, `tests/unit/test_resumes_library.py` |
+
+## Phase 9: search precision
+
+These requirement IDs come from the phase 9 task, not the requirements document.
+
+| ID | Description | Tests |
+| --- | --- | --- |
+| SRCH-1 | Jobs are filtered by whole-word `title_include` / `title_exclude` matching before they are stored. | `tests/acceptance/test_p9_ac1_titles.py`, `tests/unit/test_titles.py` |
+| SRCH-2 | Job boards, Workday and careers pages all drop jobs through one filter and store a skipped ticket with the reason. | `tests/acceptance/test_p9_ac2_paths.py`, `tests/unit/test_intake.py`, `tests/unit/test_workday_filter.py`, `tests/unit/test_jobspy_filter.py`, `tests/unit/test_smartextract_filter.py` |
+| SRCH-3 | One location matcher; old and new location keys give identical results. | `tests/acceptance/test_p9_ac3_ac4_location.py`, `tests/acceptance/test_p9_ac4_location_unchanged.py`, `tests/unit/test_search_config.py` |
+| SRCH-4 | Dropped counts and a hint appear in the discover result, the run log and the Runs tab. | `tests/acceptance/test_p9_ac5_report.py`, `tests/unit/test_runs_dropped.py` |
+| SRCH-5 | Dropped jobs can be restored to pending and are then exempt from the filters. | `tests/acceptance/test_p9_ac6_restore.py`, `tests/unit/test_restore.py` |
+| SRCH-6 | `hireember init` proposes `title_include` and `title_exclude`. | `tests/acceptance/test_p9_ac7_init.py`, `tests/unit/test_init_titles.py` |
+| SRCH-7 | The Profile API reads and writes the canonical keys in `searches.yaml` and `profile.json` atomically. | `tests/acceptance/test_p9_ac8_settings.py`, `tests/unit/test_profile_api.py` |
+| SRCH-8 | The dashboard Profile tab edits the rules; skipped dropped tickets have Restore and a status filter. | `tests/acceptance/test_p9_ac9_ui.py`, `tests/unit/test_index_profile.py` |
+| SRCH-9 | The scorer prompt carries the `title_include` role family and caps out-of-family scores at 3. | `tests/acceptance/test_p9_ac10_scorer.py`, `tests/acceptance/test_p9_ac10_unchanged.py`, `tests/unit/test_scorer_role_family.py` |
+| SRCH-10 | `hireember doctor` warns about unknown config keys and empty title lists. | `tests/acceptance/test_p9_ac11_doctor.py`, `tests/unit/test_doctor_keys.py` |
+| SRCH-11 | Unchanged behaviour for remote, empty and placeholder locations; docs match the code. | `tests/acceptance/test_p9_ac12_unchanged.py`, `tests/acceptance/test_p9_ac13_docs.py` |
