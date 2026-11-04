@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -20,7 +21,7 @@ logging.basicConfig(
 app = typer.Typer(
     name="hireember",
     help=("HireEmber — AI-powered end-to-end job application pipeline. "
-          "Keep a company list, schedule daily runs, and export your results."),
+          "Keep a company list, schedule daily runs, add jobs by URL, and export your results."),
     no_args_is_help=True,
 )
 console = Console()
@@ -65,7 +66,7 @@ def main(
 ) -> None:
     """HireEmber — AI-powered end-to-end job application pipeline.
 
-    Keep a company list, schedule daily runs, and export your results.
+    Keep a company list, schedule daily runs, add jobs by URL, and export your results.
     """
 
 
@@ -180,6 +181,61 @@ def run(
 
     if result.get("errors"):
         raise typer.Exit(code=1)
+
+
+@app.command("add-job")
+def add_job(
+    urls: list[str] = typer.Argument(..., help="Job page URLs to add."),
+    apply: bool = typer.Option(False, "--apply", help="Also apply to the jobs that were added."),
+    no_review: bool = typer.Option(False, "--no-review", help="With --apply, submit without stopping for review."),
+    text: Optional[str] = typer.Option(None, "--text", help="File with the job description, for one URL."),
+) -> None:
+    """Add jobs by URL: read each page, make a ticket, and optionally apply."""
+    if no_review and not apply:
+        console.print("--no-review needs --apply.", markup=False)
+        raise typer.Exit(code=2)
+    if text is not None and len(urls) > 1:
+        console.print("--text works with one URL at a time.", markup=False)
+        raise typer.Exit(code=2)
+    description = None
+    if text is not None:
+        try:
+            description = Path(text).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            console.print("The description file could not be read.", markup=False)
+            raise typer.Exit(code=1)
+        if not description.strip():
+            console.print("The description file is empty.", markup=False)
+            raise typer.Exit(code=1)
+
+    _bootstrap()
+
+    from hireember import addjob, runs
+    from hireember.database import get_connection
+
+    conn = get_connection()
+    try:
+        token = runs.acquire_lock(conn)
+    except runs.RunInProgressError:
+        console.print("A run is already in progress. Wait for it to finish, then try again.", markup=False)
+        raise typer.Exit(code=1)
+    try:
+        rows = addjob.run_add_jobs(conn, list(urls), apply=apply, review=not no_review, text=description)
+    finally:
+        runs.release_lock(conn, token)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("URL", overflow="fold")
+    for name in ("Result", "Ticket", "Score"):
+        table.add_column(name)
+    table.add_column("Next step", overflow="fold")
+    for r in rows:
+        table.add_row(r.url, r.status, f"#{r.ticket_id}" if r.ticket_id is not None else "-",
+                      str(r.score) if r.score is not None else "-", r.next_step)
+    console.print(table)
+    console.print(addjob.format_summary(rows), markup=False)
+    if apply and not any(r.status == "added" for r in rows):
+        console.print("Nothing new to apply to.", markup=False)
 
 
 @app.command()

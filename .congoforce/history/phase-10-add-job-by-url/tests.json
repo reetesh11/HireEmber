@@ -1,0 +1,143 @@
+{
+  "acceptance": [
+    {
+      "criterion": "AC-1",
+      "file": "tests/acceptance/test_p10_ac1_layouts.py",
+      "tests": 9,
+      "expect_red": true,
+      "description": "add_job_from_url yields title/company/location/description for JSON-LD, Greenhouse, Lever, Ashby, Workday (no AI call) and unknown layout (one extract call); parse_job_page and looks_like_login"
+    },
+    {
+      "criterion": "AC-2",
+      "file": "tests/acceptance/test_p10_ac2_dedupe.py",
+      "tests": 10,
+      "expect_red": true,
+      "description": "normalize_url, tracking-parameter duplicates, application_url match, applied-ticket duplicate, same URL twice in one run (AC-15, AC-16)"
+    },
+    {
+      "criterion": "AC-15",
+      "file": "tests/acceptance/test_p10_ac2_dedupe.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "test_job_with_applied_ticket_is_duplicate: a job with an applied ticket is reported duplicate"
+    },
+    {
+      "criterion": "AC-16",
+      "file": "tests/acceptance/test_p10_ac2_dedupe.py",
+      "tests": 1,
+      "expect_red": true,
+      "description": "test_same_url_twice_in_one_run: one added and one duplicate row"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p10_ac3_manual.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "strategy manual, phase 9 filters stubbed to raise and never called, no skipped ticket, manual low score stays pending with '(added by link)' reason"
+    },
+    {
+      "criterion": "AC-3",
+      "file": "tests/acceptance/test_p10_ac3_unchanged.py",
+      "tests": 1,
+      "expect_red": false,
+      "description": "non-manual job outside target location is still skipped by score_job_for_ticket"
+    },
+    {
+      "criterion": "AC-4",
+      "file": "tests/acceptance/test_p10_ac4_cli.py",
+      "tests": 14,
+      "expect_red": true,
+      "description": "add-job CLI: no launcher without --apply, launcher for added URLs only, --no-review rules, review not saved or configurable, usage errors, table, summary, run lock, help (AC-5, AC-10)"
+    },
+    {
+      "criterion": "AC-5",
+      "file": "tests/acceptance/test_p10_ac11_apply.py",
+      "tests": 10,
+      "expect_red": true,
+      "description": "run_add_jobs apply stage: preflight first, launcher args, explicit review bool, preflight failure, daily limit, next-step mapping, CAPTCHA/sign-in reasons (AC-4, AC-11)"
+    },
+    {
+      "criterion": "AC-11",
+      "file": "tests/acceptance/test_p10_ac11_apply.py",
+      "tests": 10,
+      "expect_red": true,
+      "description": "apply stage: CAPTCHA and sign-in/unsupported reasons end blocked for human (test_next_step_from_ticket_state, test_unsupported_reason_is_used_as_is); daily limit follows schedule_apply_limit with next step 'Daily apply limit reached; will wait.' (test_daily_limit_from_setting, test_daily_limit_counts_jobs_applied_today, test_pending_with_daily_limit_reason)"
+    },
+    {
+      "criterion": "AC-6",
+      "file": "tests/acceptance/test_p10_ac6_refusal.py",
+      "tests": 44,
+      "expect_red": true,
+      "description": "check_url schemes, localhost, private/link-local/unique-local/unspecified ranges, resolved addresses, redirects refused before a second request; localhost URL fails with reason"
+    },
+    {
+      "criterion": "AC-7",
+      "file": "tests/acceptance/test_p10_ac7_failures.py",
+      "tests": 11,
+      "expect_red": true,
+      "description": "404, login, 403/429, 5xx, timeout, no description give distinct reasons and blocked tickets in the queue; malformed, LinkedIn, unexpected error"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p10_ac8_text.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "text for new URL, reuse of blocked job and queue resolution, continues through score and tailor"
+    },
+    {
+      "criterion": "AC-8",
+      "file": "tests/acceptance/test_p10_ac8_cli_text.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "add-job --text FILE resumes a blocked URL; two URLs exit 2; empty and unreadable file exit 1"
+    },
+    {
+      "criterion": "AC-9",
+      "file": "tests/acceptance/test_p10_ac9_api.py",
+      "tests": 18,
+      "expect_red": true,
+      "description": "POST /api/jobs/add validation and 202, 409 busy, review ignored, results/progress via status route; description route; runs.start_task_async"
+    },
+    {
+      "criterion": "AC-10",
+      "file": "tests/acceptance/test_p10_ac10_rows.py",
+      "tests": 7,
+      "expect_red": true,
+      "description": "three URLs with one failure: rows, order, scores, next steps, progress, summary line, state helpers"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p10_ac12_ui.py",
+      "tests": 16,
+      "expect_red": true,
+      "description": "served dashboard has the Add job URLs panel, labels, buttons, messages, status/alert regions, results columns, paste-description field"
+    },
+    {
+      "criterion": "AC-12",
+      "file": "tests/acceptance/test_p10_ac12_unchanged.py",
+      "tests": 1,
+      "expect_red": false,
+      "description": "dashboard offers no control that turns review off"
+    },
+    {
+      "criterion": "AC-13",
+      "file": "tests/acceptance/test_p10_ac13_logs.py",
+      "tests": 2,
+      "expect_red": true,
+      "description": "no API key or page text in info-level logs or run log; unexpected error details not in result"
+    },
+    {
+      "criterion": "AC-14",
+      "file": "tests/acceptance/test_p10_ac14_docs.py",
+      "tests": 4,
+      "expect_red": true,
+      "description": "README section, CLI reference, traceability, CLI help text and callback docstring"
+    }
+  ],
+  "untestable": [
+    {
+      "criterion": "AC-12 (keyboard use, screen-reader labels, live progress text and disabled buttons)",
+      "reason": "needs a browser; tests only check the served page for the labels, texts and role attributes. The verifier should read the markup and script for keyboard operation and button disabling."
+    }
+  ]
+}

@@ -67,8 +67,9 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
         raise tickets.TicketError(f"Job {url} not found.")
     job = dict(zip(row.keys(), tuple(row)))
 
+    manual = job.get("strategy") == "manual"
     existing = tickets.get_ticket_by_url(conn, url)
-    if not (existing and (existing["score"] is not None or tickets.is_restored(conn, existing["id"]))):
+    if not manual and not (existing and (existing["score"] is not None or tickets.is_restored(conn, existing["id"]))):
         reason = location_skip_reason(job.get("location"), profile)
         if reason:
             ticket_id = tickets.open_ticket(conn, url, "skipped", reason)
@@ -97,7 +98,15 @@ def score_job_for_ticket(conn: sqlite3.Connection, url: str, *, profile: dict | 
     ticket_id = tickets.set_job_score(conn, url, result["score"], result["reasoning"] or "no reason given")
     usage.record_collected(conn, ticket_id, "scoring", spent)
     tickets.set_ticket_resume(conn, ticket_id, resume_id)
-    if prior and prior["score"] is None and prior["status"] in ("blocked for human", "pending"):
+    if manual and prior and prior["score"] is None and prior["status"] == "pending":
+        # Added by link: the user chose this job, so a low score is shown but never stops it.
+        threshold = tickets.get_threshold(conn)
+        if result["score"] >= threshold:
+            tickets.set_reason(conn, ticket_id, f"score {result['score']} meets threshold {threshold}")
+        else:
+            tickets.set_reason(conn, ticket_id,
+                               f"score {result['score']} below threshold {threshold} (added by link)")
+    elif prior and prior["score"] is None and prior["status"] in ("blocked for human", "pending"):
         # An earlier attempt blocked before scoring, or the ticket was restored unscored;
         # the score now decides the status.
         threshold = tickets.get_threshold(conn)

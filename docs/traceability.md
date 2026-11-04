@@ -130,3 +130,24 @@ These requirement IDs come from the phase 9 task, not the requirements document.
 | SRCH-9 | The scorer prompt carries the `title_include` role family and caps out-of-family scores at 3. | `tests/acceptance/test_p9_ac10_scorer.py`, `tests/acceptance/test_p9_ac10_unchanged.py`, `tests/unit/test_scorer_role_family.py` |
 | SRCH-10 | `hireember doctor` warns about unknown config keys and empty title lists. | `tests/acceptance/test_p9_ac11_doctor.py`, `tests/unit/test_doctor_keys.py` |
 | SRCH-11 | Unchanged behaviour for remote, empty and placeholder locations; docs match the code. | `tests/acceptance/test_p9_ac12_unchanged.py`, `tests/acceptance/test_p9_ac13_docs.py` |
+
+## Phase 10: add jobs by URL
+
+These requirement IDs come from the phase 10 task (`hireember add-job` and `POST /api/jobs/add`), not the requirements document.
+
+| ID | Description | Tests |
+| --- | --- | --- |
+| AC-1 | A job page is read into title, company, location and description for JSON-LD, Greenhouse, Lever, Ashby, Workday and unknown layouts. | `tests/acceptance/test_p10_ac1_layouts.py`, `tests/unit/test_enrichment_page.py` |
+| AC-2 | URLs are normalised and duplicates are reported (also AC-15 applied ticket, AC-16 same URL twice in one run). | `tests/acceptance/test_p10_ac2_dedupe.py`, `tests/unit/test_addjob_core.py` |
+| AC-3 | Jobs added by link are stored with strategy manual, skip the phase 9 filters, and a low score stays pending. | `tests/acceptance/test_p10_ac3_manual.py`, `tests/acceptance/test_p10_ac3_unchanged.py`, `tests/unit/test_gating_manual.py` |
+| AC-4 | `hireember add-job` runs without the launcher unless `--apply` is given; `--no-review` rules and usage errors. | `tests/acceptance/test_p10_ac4_cli.py`, `tests/unit/test_cli_add_job.py` |
+| AC-5 | The apply stage runs preflight first and calls the launcher once per added job. | `tests/acceptance/test_p10_ac11_apply.py`, `tests/unit/test_addjob_apply.py` |
+| AC-6 | Non-http schemes and local or private addresses are refused before any body is read. | `tests/acceptance/test_p10_ac6_refusal.py`, `tests/unit/test_urlfetch.py` |
+| AC-7 | Unreadable pages give distinct plain reasons and a blocked ticket in the queue. | `tests/acceptance/test_p10_ac7_failures.py` |
+| AC-8 | Pasted description text resumes a blocked URL (API, CLI `--text`). | `tests/acceptance/test_p10_ac8_text.py`, `tests/acceptance/test_p10_ac8_cli_text.py` |
+| AC-9 | `POST /api/jobs/add`, `POST /api/tickets/<id>/description` and the results and progress on `GET /api/stages/status`. | `tests/acceptance/test_p10_ac9_api.py`, `tests/unit/test_web_add_jobs.py`, `tests/unit/test_runs_task.py` |
+| AC-10 | One result row per URL, in order, with score, next step, progress and a summary line. | `tests/acceptance/test_p10_ac10_rows.py`, `tests/unit/test_addjob_run.py` |
+| AC-11 | CAPTCHA and sign-in stops are reported in plain words; the daily apply limit holds extra jobs. | `tests/acceptance/test_p10_ac11_apply.py` |
+| AC-12 | The Tickets tab has the Add job URLs panel and the paste-description field; review cannot be turned off. | `tests/acceptance/test_p10_ac12_ui.py`, `tests/acceptance/test_p10_ac12_unchanged.py`, `tests/unit/test_index_add_jobs.py` |
+| AC-13 | Logs hold no API keys and no page text at info level. | `tests/acceptance/test_p10_ac13_logs.py` |
+| AC-14 | The README, CLI reference, traceability and CLI help describe adding jobs by URL. | `tests/acceptance/test_p10_ac14_docs.py` |

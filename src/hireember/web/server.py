@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from hireember import answers, database, logs, resumes, runs, search_config, tickets
+from hireember import addjob, answers, database, logs, resumes, runs, search_config, tickets
 from hireember.web import queries
 
 DEFAULT_HOST = "127.0.0.1"
@@ -165,6 +165,45 @@ def _text(body: dict, key: str) -> str:
     if not isinstance(value, str):
         raise ApiError(400, f"{key} must be text.", "bad_request")
     return value
+
+
+MAX_ADD_URLS = 25
+MAX_URL_LENGTH = 2048
+
+
+def _add_urls(body: dict) -> list[str]:
+    """The URLs of an add request, stripped, with blank lines dropped; ApiError when they are not usable."""
+    raw = body.get("urls")
+    if not isinstance(raw, list) or not all(isinstance(u, str) for u in raw):
+        raise ApiError(400, "Enter at least one URL.", "invalid_urls")
+    urls = [u.strip() for u in raw if u.strip()]
+    if not urls:
+        raise ApiError(400, "Enter at least one URL.", "invalid_urls")
+    if len(urls) > MAX_ADD_URLS:
+        raise ApiError(400, f"You can add up to {MAX_ADD_URLS} URLs at a time.", "too_many_urls")
+    if any(len(u) > MAX_URL_LENGTH for u in urls):
+        raise ApiError(400, f"A URL is longer than {MAX_URL_LENGTH} characters.", "url_too_long")
+    return urls
+
+
+def _add_task(urls: list[str], *, apply: bool, text: str | None):
+    """The work function for runs.start_task_async: add the URLs and keep the status state current."""
+    def work(conn) -> None:
+        total = len(urls)
+
+        def save(rows, done):
+            addjob.save_state(conn, running=True, rows=rows,
+                              progress={"done": done, "total": total})
+
+        save([], 0)
+        try:
+            rows = addjob.run_add_jobs(conn, urls, apply=apply, review=True, text=text,
+                                       progress=lambda done, _total: save([], done))
+        except Exception:
+            addjob.save_state(conn, running=False, rows=[], progress=None)
+            raise
+        addjob.save_state(conn, running=False, rows=rows, progress=None)
+    return work
 
 
 def _id(body: dict, key: str) -> int:
@@ -349,9 +388,13 @@ class Handler(BaseHTTPRequestHandler):
                        "text/html; charset=utf-8")
         elif path == "/api/stages/status":
             last = runs.last_stage_result(conn)
-            self._json(200, {"running": runs.is_running(conn),
+            running = runs.is_running(conn)
+            state = addjob.load_state(conn)
+            self._json(200, {"running": running,
                              "last": {"stage": last.get("stage"), "message": last.get("message")}
-                             if last else None})
+                             if last else None,
+                             "results": state["results"],
+                             "progress": state["progress"] if running else None})
         elif path == "/api/answers":
             self._json(200, _answers(conn))
         elif path == "/api/resumes":
@@ -423,6 +466,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True})
         elif method == "POST" and (m := re.fullmatch(r"/api/stages/([\w-]+)", path)):
             self._start_stage(m.group(1))
+        elif method == "POST" and path == "/api/jobs/add":
+            self._add_jobs(self._json_body())
+        elif method == "POST" and (m := re.fullmatch(r"/api/tickets/(\d+)/description", path)):
+            self._resume_with_description(conn, int(m.group(1)), self._json_body())
         elif method == "PUT" and (m := re.fullmatch(r"/api/answers/(\d+)", path)):
             body = self._json_body()
             answers.update_answer(conn, int(m.group(1)), _text(body, "question"),
@@ -465,6 +512,32 @@ class Handler(BaseHTTPRequestHandler):
         except runs.RunInProgressError as exc:
             raise ApiError(409, str(exc), "run_in_progress") from None
         self._json(202, {"started": True, "stage": stage})
+
+    def _start_add_task(self, urls: list[str], *, apply: bool, text: str | None) -> None:
+        try:
+            runs.start_task_async("add-jobs", _add_task(urls, apply=apply, text=text),
+                                  conn=database.get_connection(self.server.db_path))
+        except runs.RunInProgressError as exc:
+            raise ApiError(409, str(exc), "busy") from None
+        self._json(202, {"started": True})
+
+    def _add_jobs(self, body: dict) -> None:
+        urls = _add_urls(body)
+        text = body.get("text")
+        if text is not None and not isinstance(text, str):
+            raise ApiError(400, "text must be text.", "bad_request")
+        text = text if text and text.strip() else None
+        if text is not None and len(urls) > 1:
+            raise ApiError(400, "Pasted text works with one URL at a time.", "bad_request")
+        # There is no review field: an add from the dashboard always stops for review before submit.
+        self._start_add_task(urls, apply=body.get("apply") is True, text=text)
+
+    def _resume_with_description(self, conn, ticket_id: int, body: dict) -> None:
+        text = _text(body, "text")
+        if not text.strip():
+            raise ApiError(400, "Enter the job description.", "bad_request")
+        ticket = tickets.get_ticket(conn, ticket_id)  # TicketNotFoundError gives 404
+        self._start_add_task([ticket["job_url"]], apply=False, text=text)
 
     def _add_resume(self, conn) -> None:
         """Create a resume from a raw body (X-* headers) or a multipart form. Errors are {"error": ...}."""

@@ -77,6 +77,25 @@
 </header>
 <main>
   <section id="page-tickets">
+    <div id="add-jobs" class="panel" role="region" aria-label="Add job URLs">
+      <h3>Add job URLs</h3>
+      <label for="add-urls">Job URLs (one per line)</label>
+      <textarea id="add-urls" rows="4" style="width:100%" placeholder="https://company.example/careers/123"></textarea>
+      <div id="add-text-row" class="hidden">
+        <label for="add-text">Job description text (use if a page cannot be read)</label>
+        <textarea id="add-text" rows="5" style="width:100%"></textarea>
+      </div>
+      <p>
+        <button id="add-go" class="primary" type="button">Add</button>
+        <button id="add-apply" type="button">Add and apply</button>
+      </p>
+      <div id="add-status" class="muted" role="status"></div>
+      <div id="add-error" class="msg" role="alert"></div>
+      <table id="add-results" class="hidden">
+        <thead><tr><th>URL</th><th>Result</th><th>Ticket</th><th>Score</th><th>Next step</th></tr></thead>
+        <tbody id="add-results-body"></tbody>
+      </table>
+    </div>
     <div class="bar">
       <span role="group" aria-label="View">
         <button id="btn-board" aria-pressed="true">Board</button>
@@ -382,6 +401,7 @@ function renderDetail(t) {
     h("div", {}, linkNode(t.link)),
     isDropped(t) && h("p", {}, restoreButton(t)),
     t.blocked && h("div", { class: "panel" }, h("strong", {}, "Blocked: "), t.blocked.reason, h("div", {}, "Next step: " + t.blocked.next_step), t.blocked.question && h("div", {}, "Question: " + t.blocked.question)),
+    t.status === "blocked for human" && UNREADABLE_PAGE.some((p) => (t.status_reason || "").startsWith(p)) && pasteDescription(t),
     h("label", { for: "d-status" }, "Status"), status,
     h("label", { for: "d-reason" }, "Reason"), reason,
     overrideRow,
@@ -694,6 +714,86 @@ function initStatusFilter() {
   sel.append(h("option", { value: "" }, "All except dropped"), STATUSES.map((s) => h("option", { value: s }, s)));
 }
 
+/* ---------- add job URLs ---------- */
+const ADD_MAX_URLS = 25, ADD_MAX_LENGTH = 2048;
+function addUrls() { return $("add-urls").value.split("\n").map((u) => u.trim()).filter(Boolean); }
+function addCheck(urls) {
+  if (!urls.length) return "Enter at least one URL.";
+  if (urls.length > ADD_MAX_URLS) return "You can add up to 25 URLs at a time.";
+  if (urls.some((u) => u.length > ADD_MAX_LENGTH)) return "A URL is longer than 2048 characters.";
+  return "";
+}
+function showAddResults(results) {
+  $("add-results").classList.toggle("hidden", !results.length);
+  $("add-results-body").replaceChildren(...results.map((r) => h("tr", {},
+    h("td", {}, r.url), h("td", {}, r.status),
+    h("td", {}, r.ticket_id != null ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); selectTicket(r.ticket_id); } }, "#" + r.ticket_id) : "-"),
+    h("td", {}, r.score != null ? r.score : "-"), h("td", {}, r.next_step || ""))));
+}
+function setAddBusy(running) { $("add-go").disabled = running; $("add-apply").disabled = running; }
+async function loadAddStatus() {
+  try {
+    const st = await api("GET", "/api/stages/status");
+    setAddBusy(st.running);
+    if (st.running) $("add-status").textContent = st.progress ? "Adding " + Math.min(st.progress.done + 1, st.progress.total) + " of " + st.progress.total + "..." : "A run is in progress.";
+    else if ($("add-status").textContent) $("add-status").textContent = "";
+    showAddResults(st.results || []);
+    return st;
+  } catch (e) { return null; }
+}
+async function startAdd(apply) {
+  const urls = addUrls();
+  const problem = addCheck(urls);
+  $("add-error").textContent = problem;
+  if (problem) return;
+  const body = { urls, apply };
+  if (urls.length === 1 && $("add-text").value.trim()) body.text = $("add-text").value;
+  setAddBusy(true);
+  try {
+    await api("POST", "/api/jobs/add", body);
+    $("add-status").textContent = "A run is in progress.";
+  } catch (e) {
+    $("add-error").textContent = e.status === 409 ? "A run is already in progress." : e.message;
+    setAddBusy(false);
+    return;
+  }
+  const timer = setInterval(async () => {
+    const st = await loadAddStatus();
+    if (st && !st.running) { clearInterval(timer); loadTickets(); }
+  }, 1000);
+  loadAddStatus();
+}
+function initAddJobs() {
+  $("add-go").addEventListener("click", () => startAdd(false));
+  $("add-apply").addEventListener("click", () => startAdd(true));
+  $("add-urls").addEventListener("input", () => {
+    $("add-text-row").classList.toggle("hidden", addUrls().length !== 1);
+    $("add-error").textContent = "";
+  });
+  loadAddStatus();
+}
+const UNREADABLE_PAGE = ["The page ", "The site blocked", "No job description was found", "This address is on"];
+function pasteDescription(t) {
+  const area = h("textarea", { id: "d-paste", rows: 5, style: "width:100%" });
+  const msg = h("div", { class: "msg", role: "alert" });
+  const go = async () => {
+    msg.textContent = "";
+    if (!area.value.trim()) { msg.textContent = "Enter the job description."; return; }
+    try {
+      await api("POST", "/api/tickets/" + t.id + "/description", { text: area.value });
+      toast("Continuing with the pasted description.");
+      $("add-status").textContent = "A run is in progress.";
+      const timer = setInterval(async () => {
+        const st = await loadAddStatus();
+        if (st && !st.running) { clearInterval(timer); loadTickets(); refreshDetail(true); }
+      }, 1000);
+    } catch (e) { msg.textContent = e.status === 409 ? "A run is already in progress." : e.message; }
+  };
+  return h("div", { class: "panel" },
+    h("label", { for: "d-paste" }, "Paste job description"), area,
+    h("p", {}, h("button", { class: "primary", type: "button", onclick: go }, "Continue")), msg);
+}
+
 /* ---------- tabs, polling, startup ---------- */
 function showTab(name) {
   state.tab = name;
@@ -735,6 +835,7 @@ async function init() {
     $(id).addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { mirrorUrl(); loadTickets(); }, 250); });
     $(id).addEventListener("change", () => { mirrorUrl(); loadTickets(); });
   }
+  initAddJobs();
   initResumeForm();
   await loadResumes();
   showTab(state.tab);
