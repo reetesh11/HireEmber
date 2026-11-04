@@ -45,6 +45,13 @@ class DuplicateTicketError(TicketError):
         super().__init__(f"Ticket {ticket_id} is a duplicate of ticket {duplicate_of}; not started.")
 
 
+class NotRestorableError(TicketError):
+    """The ticket was not dropped by the title or location filter."""
+
+    def __init__(self):
+        super().__init__("Only jobs dropped by the title or location filter can be restored.")
+
+
 class OverrideReasonError(TicketError):
     """An override was requested without a reason."""
 
@@ -59,6 +66,7 @@ class NoteTooLongError(TicketError):
         super().__init__(f"Note is too long (max {MAX_NOTE_LENGTH:,} characters).")
 
 
+RESTORED_REASON = "restored from filter"
 MAX_NOTE_LENGTH = 10_000
 _NOTE_COLUMNS = {"note": "notes", "referral note": "referral_note"}
 
@@ -411,6 +419,33 @@ def _find_duplicate(conn: sqlite3.Connection, ticket: dict) -> int | None:
         params,
     ).fetchone()
     return row[0] if row else None
+
+
+def is_dropped_reason(reason: str | None) -> bool:
+    """True when a status reason says the title or location filter dropped the job."""
+    return bool(reason) and reason.startswith(("title:", "location:"))
+
+
+def is_restored(conn: sqlite3.Connection, ticket_id: int) -> bool:
+    """True when the ticket was restored from the filter."""
+    return conn.execute(
+        "SELECT 1 FROM ticket_events WHERE ticket_id = ? AND reason = ? LIMIT 1",
+        (ticket_id, RESTORED_REASON),
+    ).fetchone() is not None
+
+
+def restore_dropped(conn: sqlite3.Connection, ticket_id: int) -> dict:
+    """Move a filter-dropped ticket back to ``pending``; it is exempt from the filters afterwards."""
+    ticket = get_ticket(conn, ticket_id)
+    if ticket["status"] != "skipped" or not is_dropped_reason(ticket["status_reason"]):
+        raise NotRestorableError()
+    set_status(conn, ticket_id, "pending", actor="user", reason=RESTORED_REASON)
+    conn.execute(
+        "UPDATE jobs SET detail_scraped_at = NULL WHERE url = ? AND full_description IS NULL",
+        (ticket["job_url"],),
+    )
+    conn.commit()
+    return get_ticket(conn, ticket_id)
 
 
 def _write_status(conn, ticket_id, status, actor, reason, link, link_kind) -> None:

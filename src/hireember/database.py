@@ -295,6 +295,10 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "SELECT COUNT(*) FROM tickets WHERE status = 'skipped' AND status_reason LIKE 'location:%'"
     ).fetchone()[0]
 
+    stats["title_skipped"] = conn.execute(
+        "SELECT COUNT(*) FROM tickets WHERE status = 'skipped' AND status_reason LIKE 'title:%'"
+    ).fetchone()[0]
+
     # Score distribution
     dist_rows = conn.execute(
         "SELECT fit_score, COUNT(*) as cnt FROM jobs "
@@ -417,7 +421,11 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         "discovered": "1=1",
         "pending_detail": "detail_scraped_at IS NULL",
         "enriched": "full_description IS NOT NULL",
-        "pending_score": "full_description IS NOT NULL AND fit_score IS NULL",
+        "pending_score": (
+            "full_description IS NOT NULL AND fit_score IS NULL AND url NOT IN ("
+            "SELECT job_url FROM tickets WHERE status = 'skipped' "
+            "AND (status_reason LIKE 'title:%' OR status_reason LIKE 'location:%'))"
+        ),
         "scored": "fit_score IS NOT NULL",
         "pending_tailor": (
             "fit_score >= ? AND full_description IS NOT NULL "
