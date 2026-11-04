@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from hireember import runs, tickets
+from hireember import gating, runs, tickets
 from hireember.config import is_linkedin_url
 from hireember.database import store_jobs
 from hireember.enrichment.page import extract_with_ai, looks_like_login, parse_job_page
@@ -182,3 +183,122 @@ def add_job_from_url(conn: sqlite3.Connection, url: str, *, fetch=None, extract=
         except sqlite3.Error:
             pass
         return AddResult("failed", norm, None, UNEXPECTED_REASON)
+
+
+# -- running several links ----------------------------------------------------
+
+STOPPED_NO_APPLY = "Stopped at ticket (run with --apply to apply)"
+ALREADY_IN_TICKETS = "Already in your tickets"
+DAILY_LIMIT_STEP = "Daily apply limit reached; will wait."
+WAITING_AT_REVIEW = "Waiting at review"
+STATE_KEY = "add_jobs_state"
+
+PLAIN_REASONS = {
+    "captcha": "A CAPTCHA needs you to solve it.",
+    "account needed": "A sign-in is needed to continue.",
+}
+
+
+@dataclass
+class AddRow:
+    url: str
+    status: str  # "added", "already added" or "failed"
+    ticket_id: int | None
+    score: int | None
+    reason: str
+    next_step: str
+
+
+def plain_reason(reason: str | None) -> str:
+    text = (reason or "").strip()
+    return PLAIN_REASONS.get(text, text)
+
+
+def next_step(ticket: dict | None, *, applying: bool = False) -> str:
+    """The plain-language next step for a ticket after an add (and apply) run."""
+    if ticket is None:
+        return ""
+    status, reason = ticket["status"], ticket["status_reason"] or ""
+    if status == "applied":
+        return "Applied"
+    if status == "blocked for human":
+        return f"Blocked for human: {plain_reason(reason)}"
+    if "limit: daily" in reason:
+        return DAILY_LIMIT_STEP
+    return WAITING_AT_REVIEW if applying else STOPPED_NO_APPLY
+
+
+def _ticket_of(conn: sqlite3.Connection, ticket_id: int | None) -> dict | None:
+    return tickets.get_ticket(conn, ticket_id) if ticket_id is not None else None
+
+
+def _row_for(conn: sqlite3.Connection, url: str, result: AddResult) -> AddRow:
+    if result.status == "duplicate":
+        ticket = _ticket_of(conn, result.ticket_id)
+        return AddRow(url, "already added", result.ticket_id, ticket["score"] if ticket else None,
+                      result.reason, ALREADY_IN_TICKETS)
+    if result.status == "failed":
+        step = f"Blocked for human: {result.reason}" if result.ticket_id is not None else result.reason
+        return AddRow(url, "failed", result.ticket_id, None, result.reason, step)
+    # Added: score the job, then tailor it when the ticket is pending.
+    scored = gating.score_job_for_ticket(conn, result.job_url)
+    if scored.status == "pending":
+        gating.tailor_ticket(conn, scored.ticket_id)
+    ticket = tickets.get_ticket(conn, result.ticket_id)
+    return AddRow(url, "added", result.ticket_id, ticket["score"], "", next_step(ticket))
+
+
+def _add_one(conn: sqlite3.Connection, url: str, *, text: str | None, fetch, extract) -> AddRow:
+    try:
+        result = add_job_from_url(conn, url, fetch=fetch, extract=extract, text=text)
+        return _row_for(conn, url, result)
+    except Exception as e:  # noqa: BLE001 - a failure on one link never stops the others
+        log.error("Processing a job link failed: %s", type(e).__name__)
+        log.debug("Processing %s failed", url, exc_info=True)
+        return AddRow(url, "failed", None, None, UNEXPECTED_REASON, UNEXPECTED_REASON)
+
+
+def run_add_jobs(conn: sqlite3.Connection, urls: list[str], *, apply: bool = False, review: bool = True,
+                 text: str | None = None, fetch=None, extract=None, progress=None,
+                 now=None) -> list[AddRow]:
+    """Add each URL, score and tailor the new jobs and, with ``apply``, apply to exactly those jobs.
+
+    One row is returned per input URL, in input order.
+    """
+    rows: list[AddRow] = []
+    for done, url in enumerate(urls, start=1):
+        rows.append(_add_one(conn, url, text=text, fetch=fetch, extract=extract))
+        log.info("Job link %d of %d: %s", done, len(urls), rows[-1].status)
+        if progress:
+            progress(done, len(urls))
+    if apply:
+        apply_added(conn, rows, review=review, now=now)
+    return rows
+
+
+def format_summary(rows: list[AddRow]) -> str:
+    added = sum(r.status == "added" for r in rows)
+    already = sum(r.status == "already added" for r in rows)
+    failed = sum(r.status == "failed" for r in rows)
+    return f"{len(rows)} URLs: {added} added, {already} already added, {failed} failed."
+
+
+def save_state(conn: sqlite3.Connection, *, running: bool, rows: list[AddRow],
+               progress: dict | None) -> None:
+    tickets.set_setting(conn, STATE_KEY, json.dumps(
+        {"running": running, "results": [asdict(r) for r in rows], "progress": progress}))
+
+
+def load_state(conn: sqlite3.Connection) -> dict:
+    raw = tickets.get_setting(conn, STATE_KEY)
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {"results": list(data.get("results") or []), "progress": data.get("progress")}
+
+
+def apply_added(conn: sqlite3.Connection, rows: list[AddRow], *, review: bool, now=None) -> None:
+    """Placeholder until the apply stage is wired in."""
