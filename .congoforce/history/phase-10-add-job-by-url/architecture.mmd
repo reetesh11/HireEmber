@@ -1,0 +1,21 @@
+flowchart LR
+  cli[cli.py add-job]:::changed --> add[addjob.py run_add_jobs]:::new
+  ui[web/static/index.html]:::changed -->|POST /api/jobs/add| srv[web/server.py]:::changed
+  ui -->|GET /api/stages/status| srv
+  srv -->|start_task_async| runs[runs.py]:::changed
+  runs --> add
+  cli -->|acquire_lock| runs
+  add --> uf[urlfetch.py]:::new
+  add --> pg[enrichment/page.py]:::new
+  pg --> det[enrichment/detail.py]
+  pg --> llm[llm.py]
+  uf -->|http, guarded| web((job page))
+  add -->|store_jobs, manual| db[(jobs, tickets, settings)]
+  add --> gate[gating.py]:::changed
+  gate --> db
+  add --> pre[preflight.py]
+  add -->|main, review=True| lau[apply/launcher.py]
+  lau --> run[apply/runner.py limits gate]
+  add -.->|never called| filt[intake.py JobFilter]
+  classDef new fill:#d1fae5,stroke:#059669
+  classDef changed fill:#fef3c7,stroke:#d97706
