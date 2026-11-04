@@ -12,9 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-import yaml
-
-from hireember import config
+from hireember import search_config
 
 _PLACEHOLDERS = {"na", "nan", "none", "tbd", "various", "multiple locations", "unknown", "worldwide", "global"}
 _REMOTE_WORDS = {"remote", "wfh", "telecommute", "virtual"}
@@ -95,18 +93,12 @@ def _strings(value) -> list[str]:
 
 
 def _load_search_cfg() -> dict:
-    try:
-        data = yaml.safe_load(config.SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:  # absent or unreadable file means no search targets
-        return {}
-    return data if isinstance(data, dict) else {}
+    return search_config.load()
 
 
 def _targets(profile: dict | None, cfg: dict) -> tuple[list[list[str]], list[list[str]], bool]:
     """Return (accept phrases, reject phrases, remote accepted)."""
-    loc_cfg = cfg.get("location") if isinstance(cfg.get("location"), dict) else {}
-    accept = _strings(loc_cfg.get("accept_patterns")) + _strings(cfg.get("location_accept"))
-    reject = _strings(loc_cfg.get("reject_patterns")) + _strings(cfg.get("location_reject_non_remote"))
+    accept, reject = search_config.location_lists(cfg)
     remote = False
     entries = cfg.get("locations")
     for entry in entries if isinstance(entries, list) else []:
