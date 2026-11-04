@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from hireember import gating, runs, tickets
@@ -300,5 +301,39 @@ def load_state(conn: sqlite3.Connection) -> dict:
     return {"results": list(data.get("results") or []), "progress": data.get("progress")}
 
 
+def _preflight_problem(outcome) -> str:
+    titles = [n.title for n in getattr(outcome, "missing", None) or []]
+    return ", ".join(titles) if titles else "setup is incomplete"
+
+
 def apply_added(conn: sqlite3.Connection, rows: list[AddRow], *, review: bool, now=None) -> None:
-    """Placeholder until the apply stage is wired in."""
+    """Apply to the jobs added in this run, one launcher call each, and update their rows in place.
+
+    ``review`` is always passed to the launcher as an explicit bool, so the saved setting is never used.
+    """
+    from hireember import preflight, scheduler
+    from hireember.apply import launcher
+
+    todo = [r for r in rows if r.status == "added"
+            and (tickets.get_ticket(conn, r.ticket_id)["status"] == "pending")]
+    if not todo:
+        return
+    outcome = preflight.run_preflight("apply", [], no_prompt=True)
+    if not outcome.proceed:
+        problem = _preflight_problem(outcome)
+        for r in todo:
+            r.next_step = f"Stopped at ticket: {problem}"
+        return
+    moment = now or datetime.now(timezone.utc)
+    remaining = max(0, scheduler.get_schedule(conn).apply_limit - scheduler._applied_today(conn, moment))
+    for r in todo[remaining:]:
+        r.next_step = DAILY_LIMIT_STEP
+    for r in todo[:remaining]:
+        job_url = conn.execute("SELECT job_url FROM tickets WHERE id = ?", (r.ticket_id,)).fetchone()[0]
+        try:
+            launcher.main(limit=1, target_url=job_url, headless=False, review=bool(review))
+        except Exception as e:  # noqa: BLE001 - one failed apply never stops the others
+            log.error("Applying to a job link failed: %s", type(e).__name__)
+            log.debug("Applying to %s failed", job_url, exc_info=True)
+        r.next_step = next_step(tickets.get_ticket(conn, r.ticket_id), applying=True)
+        r.score = tickets.get_ticket(conn, r.ticket_id)["score"]
