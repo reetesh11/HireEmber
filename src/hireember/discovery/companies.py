@@ -10,7 +10,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from hireember import companies, runs
-from hireember.database import store_jobs
+from hireember.intake import DropTally, JobFilter, store_filtered, write_run_log
 
 log = logging.getLogger(__name__)
 
@@ -79,17 +79,20 @@ def discover_companies(conn: sqlite3.Connection, *, adapters: dict[str, Adapter]
     stamp = (now or datetime.now(timezone.utc)).isoformat()
     todo = companies.search_list(conn)
     out = {"found": 0, "new": 0, "existing": 0, "companies": len(todo), "failures": [],
-           "message": ""}
+           "message": "", "dropped": {"title": 0, "location": 0}, "hint": ""}
     if not todo:
         out["message"] = EMPTY_MESSAGE
         return out
+    flt = JobFilter.load()
+    tally = DropTally()
     for company in todo:
         try:
             roles = adapters[company["ats_type"]](company)
             for role in roles:
                 role["company"] = company["name"]
-            new, existing = store_jobs(conn, roles, site=company["name"],
-                                       strategy=company["ats_type"], now=stamp)
+            new, existing, dropped = store_filtered(
+                conn, roles, site=company["name"], strategy=company["ats_type"], flt=flt,
+                tally=tally, now=stamp)
         except Exception as e:  # noqa: BLE001 - one bad source must not stop the others
             error = str(e) or type(e).__name__
             log.warning("%s: %s", company["name"], error)
@@ -98,7 +101,10 @@ def discover_companies(conn: sqlite3.Connection, *, adapters: dict[str, Adapter]
             continue
         out["new"] += new
         out["existing"] += existing
-        out["found"] += new + existing
+        out["found"] += new + existing + dropped
+    out["dropped"] = dict(tally.counts)
+    out["hint"] = tally.hint(kept=out["new"])
+    write_run_log(conn, run_id, tally)
     ok = out["companies"] - len(out["failures"])
     out["message"] = (f"Searched {ok} of {out['companies']} companies: {out['found']} roles, "
                       f"{out['new']} new.")
