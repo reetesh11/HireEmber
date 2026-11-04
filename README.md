@@ -201,6 +201,7 @@ hireember apply --dry-run               # Fill forms without submitting
 hireember apply --continuous            # Run forever, polling for new jobs
 hireember apply --headless              # Headless browser mode
 hireember apply --url URL               # Apply to a specific job
+hireember add-job URL [URL...]          # Add jobs by URL, optionally with --apply, --no-review, --text FILE
 hireember status                        # Pipeline statistics
 hireember dashboard                     # Open the local web dashboard
 hireember company add "Acme" --url https://acme.wd3.myworkdayjobs.com/Careers --ats workday
@@ -268,6 +269,32 @@ Scoring now needs at least one base resume: run `hireember resume add` first, or
 blocked with `no base resume`. For a PDF, add a plain-text copy with `--text cv.txt` so it can be scored.
 Passwords, tokens, payment details and government IDs are never stored; questions that ask for them
 are queued and the ticket stays blocked for you.
+
+### Apply to jobs you found
+
+Found a job yourself? Paste its link and HireEmber reads the page, makes a ticket, scores it, tailors your resume and
+cover letter, and can apply.
+
+```bash
+hireember add-job URL [URL...]            # add, score and tailor; stop at the ticket
+hireember add-job URL --apply             # also apply, stopping for your review before each submit
+hireember add-job URL --apply --no-review # apply without the review stop (CLI only)
+hireember add-job URL --text desc.txt     # use a pasted description when the page cannot be read
+```
+
+In the dashboard, open the Tickets tab, paste one link per line into "Add job URLs" (up to 25 at a time), and press
+Add or Add and apply. The results table shows each link, its ticket, score and next step. If a page cannot be read
+(404, blocked, a sign-in wall or no description found), the ticket is blocked for you; open it, paste the job
+description and press Continue.
+
+- Jobs added by link skip the title and location filters. A low score is shown on the ticket but never stops the job.
+- Links you already added, or that match an existing ticket, are reported as already added.
+- LinkedIn links are not supported, and addresses on your own network or computer are never fetched.
+- Apply stops for your review before every submit unless you pass `--no-review` on the command line. The dashboard,
+  config and environment cannot turn review off for this path. Applying follows your daily apply limit.
+- Privacy: the page is fetched directly from your machine, and its text goes to your configured model only when the
+  page layout is not recognised. The address check resolves the name once, so a hostile DNS server could still
+  change the answer between the check and the connection; redirects are re-checked at every hop.
 
 ### Resume library
 
