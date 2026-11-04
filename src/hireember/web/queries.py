@@ -34,6 +34,7 @@ class TicketFilters:
     date_from: str | None = None
     date_to: str | None = None
     resume_id: int | None = None
+    status: str | None = None
 
 
 # -- links and next steps ---------------------------------------------------
@@ -171,6 +172,14 @@ def list_tickets(conn: sqlite3.Connection, filters: TicketFilters | None = None,
     if f.resume_id is not None:
         where.append("t.resume_id = ?")
         params.append(f.resume_id)
+    if f.status:
+        if f.status not in ALLOWED_STATUSES:
+            raise FilterError(f"Unknown status {f.status!r}. Allowed: {', '.join(ALLOWED_STATUSES)}.")
+        where.append("t.status = ?")
+        params.append(f.status)
+    else:
+        where.append("NOT (t.status = 'skipped' AND (COALESCE(t.status_reason, '') LIKE 'title:%' "
+                     "OR COALESCE(t.status_reason, '') LIKE 'location:%'))")
     sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "")
     key = _SORT_SQL[sort]
     sql += f" ORDER BY ({key} IS NULL), {key} {direction}, t.id {direction}"
