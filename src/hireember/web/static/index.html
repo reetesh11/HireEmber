@@ -55,6 +55,11 @@
   .toast { background:#1c2430; color:#fff; padding:8px 12px; border-radius:6px; }
   .toast.error { background:var(--err); }
   .hidden { display:none; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
+  .chip { display:inline-flex; align-items:center; gap:4px; background:#eceff3; border:1px solid var(--line); border-radius:12px; padding:2px 4px 2px 10px; }
+  .chip button { border:0; background:none; padding:0 6px; }
+  #page-profile .panel h3 { margin:0 0 4px; font-size:14px; }
+  #page-profile label { display:block; margin-top:8px; font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -66,6 +71,7 @@
     <button role="tab" id="tab-answers" aria-selected="false">Answers</button>
     <button role="tab" id="tab-resumes" aria-selected="false">Resumes</button>
     <button role="tab" id="tab-runs" aria-selected="false">Runs</button>
+    <button role="tab" id="tab-profile" aria-selected="false">Profile</button>
   </div>
   <span id="live" role="status">Live</span>
 </header>
@@ -82,6 +88,7 @@
       <label for="f-from">From<input id="f-from" type="date"></label>
       <label for="f-to">To<input id="f-to" type="date"></label>
       <label for="f-resume">Resume<select id="f-resume"><option value="">Any</option></select></label>
+      <label for="f-status">Status<select id="f-status"></select></label>
       <button id="btn-clear">Clear filters</button>
       <a id="btn-export" class="button" href="/api/export.csv" download>Export CSV</a>
     </div>
@@ -103,6 +110,7 @@
     <div id="resume-msg" class="msg" role="alert"></div>
     <div id="resume-list"></div>
   </section>
+  <section id="page-profile" class="hidden"></section>
   <section id="page-runs" class="hidden">
     <div class="bar">
       <button id="run-discover">Run discover</button>
@@ -179,8 +187,21 @@ function linkNode(link) {
   return h("span", {}, h("a", { href: link.url, target: "_blank", rel: "noopener noreferrer", onclick: (e) => e.stopPropagation() }, link.label));
 }
 
+function isDropped(t) { return t.status === "skipped" && /^(title|location):/.test(t.status_reason || ""); }
+async function restoreTicket(id) {
+  try {
+    await api("POST", "/api/tickets/" + id + "/restore", {});
+    toast("Restored. The job is pending again.");
+    loadTickets();
+    if (state.selected === id) refreshDetail(true);
+  } catch (e) { toast(e.message, true); }
+}
+function restoreButton(t) {
+  return isDropped(t) ? h("button", { type: "button", onclick: (e) => { e.stopPropagation(); restoreTicket(t.id); } }, "Restore") : null;
+}
+
 /* ---------- filters and URL state ---------- */
-const FILTER_FIELDS = { company: "f-company", score_min: "f-min", score_max: "f-max", date_from: "f-from", date_to: "f-to", resume_id: "f-resume" };
+const FILTER_FIELDS = { company: "f-company", score_min: "f-min", score_max: "f-max", date_from: "f-from", date_to: "f-to", resume_id: "f-resume", status: "f-status" };
 function filterParams() {
   const p = new URLSearchParams();
   for (const [k, id] of Object.entries(FILTER_FIELDS)) {
@@ -210,7 +231,7 @@ function readUrl() {
   if (p.get("view") === "list") state.view = "list";
   if (p.get("sort")) state.sort = p.get("sort");
   if (p.get("dir") === "asc" || p.get("dir") === "desc") state.dir = p.get("dir");
-  if (["tickets", "blocked", "answers", "resumes", "runs"].includes(p.get("tab"))) state.tab = p.get("tab");
+  if (["tickets", "blocked", "answers", "resumes", "runs", "profile"].includes(p.get("tab"))) state.tab = p.get("tab");
 }
 
 /* ---------- tickets ---------- */
@@ -258,7 +279,7 @@ function renderBoard(tickets, counts) {
       col.append(h("div", { class: "card" + (t.id === state.selected ? " sel" : ""), tabindex: "0", onclick: () => selectTicket(t.id) },
         h("div", { class: "t" }, t.title), h("div", {}, t.company),
         h("div", { class: "muted" }, [t.location, t.score != null ? "score " + t.score : ""].filter(Boolean).join(" - ")),
-        h("div", {}, linkNode(t.link))));
+        h("div", {}, linkNode(t.link)), restoreButton(t)));
     }
     board.append(col);
   }
@@ -280,7 +301,7 @@ function renderList(tickets) {
     body.append(h("tr", { class: "row" + (t.id === state.selected ? " sel" : ""), onclick: () => selectTicket(t.id) },
       h("td", {}, t.company), h("td", {}, t.title), h("td", {}, t.location), h("td", {}, t.status),
       h("td", {}, t.score == null ? "" : t.score), h("td", {}, t.resume_name || ""),
-      h("td", {}, t.applied_date || ""), h("td", {}, (t.updated_at || "").slice(0, 10)), h("td", {}, linkNode(t.link))));
+      h("td", {}, t.applied_date || ""), h("td", {}, (t.updated_at || "").slice(0, 10)), h("td", {}, linkNode(t.link), " ", restoreButton(t))));
   }
   return h("table", {}, h("thead", {}, head), body);
 }
@@ -359,6 +380,7 @@ function renderDetail(t) {
     h("div", {}, t.company + (t.location ? " - " + t.location : "")),
     h("div", { class: "muted" }, "Status: " + t.status + (t.status_reason ? " (" + t.status_reason + ")" : "") + (t.score != null ? " - score " + t.score : "")),
     h("div", {}, linkNode(t.link)),
+    isDropped(t) && h("p", {}, restoreButton(t)),
     t.blocked && h("div", { class: "panel" }, h("strong", {}, "Blocked: "), t.blocked.reason, h("div", {}, "Next step: " + t.blocked.next_step), t.blocked.question && h("div", {}, "Question: " + t.blocked.question)),
     h("label", { for: "d-status" }, "Status"), status,
     h("label", { for: "d-reason" }, "Reason"), reason,
@@ -572,10 +594,110 @@ async function startStage(stage) {
   loadStageStatus(); loadRuns();
 }
 
+/* ---------- profile ---------- */
+const PROFILE_IDS = { title_include: "p-title_include", title_exclude: "p-title_exclude", location_accept: "p-location_accept", location_reject: "p-location_reject", remote: "p-remote", city: "p-city", province_state: "p-province_state", country: "p-country" };
+const PROFILE_LISTS = [
+  ["title_include", "Target roles", "Only jobs whose title contains one of these are kept. Leave empty to keep all titles except the ones below.", true],
+  ["title_exclude", "Hard-no titles", "Jobs whose title contains one of these are dropped.", false],
+  ["location_accept", "Target locations", "Jobs located somewhere else are dropped. Leave empty to keep every location.", false],
+  ["location_reject", "Rejected locations", "Jobs whose location contains one of these are dropped, unless they are remote.", false],
+];
+const PROFILE_PERSONAL = [["city", "City"], ["province_state", "Region/State/Province"], ["country", "Country"]];
+const profile = { orig: null, cur: null, loading: true, loadError: null, readError: null, errors: {}, status: "", saving: false, focus: null };
+async function loadProfile() {
+  profile.loading = true; profile.loadError = null; profile.readError = null;
+  renderProfile();
+  try {
+    const data = await api("GET", "/api/profile");
+    profile.orig = data; profile.cur = JSON.parse(JSON.stringify(data)); profile.errors = {}; profile.status = "";
+  } catch (e) {
+    if (e.status === 422) profile.readError = e.message; else profile.loadError = e.message;
+  }
+  profile.loading = false;
+  renderProfile();
+}
+function profileDirty() { return !!profile.cur && JSON.stringify(profile.cur) !== JSON.stringify(profile.orig); }
+function syncSave() { const b = $("p-save"); if (b) b.disabled = !profileDirty() || profile.saving; }
+function addKeyword(field) {
+  const input = $(PROFILE_IDS[field]);
+  const term = input.value.trim();
+  const list = profile.cur[field];
+  let error = "";
+  if (!term) error = "Enter a keyword.";
+  else if (term.length > 80) error = "Keep entries under 80 characters.";
+  else if (list.some((x) => x.toLowerCase() === term.toLowerCase())) error = "'" + term + "' is already in the list.";
+  profile.errors[field] = error;
+  if (!error) { list.push(term); input.value = ""; profile.status = ""; }
+  profile.focus = PROFILE_IDS[field];
+  renderProfile();
+}
+function removeKeyword(field, term) {
+  profile.cur[field] = profile.cur[field].filter((x) => x !== term);
+  profile.errors[field] = ""; profile.status = ""; profile.focus = PROFILE_IDS[field];
+  renderProfile();
+}
+async function saveProfile() {
+  profile.saving = true; profile.status = ""; profile.errors = {};
+  syncSave();
+  try {
+    const data = await api("PUT", "/api/profile", profile.cur);
+    profile.orig = data; profile.cur = JSON.parse(JSON.stringify(data));
+    profile.status = "Saved. The next discover run will use these values.";
+  } catch (e) {
+    if (e.status === 400 && e.data && e.data.field) { profile.errors[e.data.field] = e.message; }
+    else if (e.status === 422) { profile.readError = e.message; }
+    else profile.status = /^Could not save:/.test(e.message) ? e.message : "Could not save: " + e.message.replace(/\.$/, "") + ". Nothing was changed.";
+  }
+  profile.saving = false;
+  renderProfile();
+}
+function keywordSection(field, heading, helper, hint) {
+  const err = profile.errors[field];
+  const chips = profile.cur[field].map((term) => h("span", { class: "chip" }, term,
+    h("button", { type: "button", "aria-label": "Remove " + term, onclick: () => removeKeyword(field, term) }, "✕")));
+  const input = h("input", { id: PROFILE_IDS[field], type: "text", "aria-label": heading, "aria-invalid": err ? "true" : false,
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); addKeyword(field); } } });
+  const extra = field === "location_accept"
+    ? h("p", {}, h("label", { for: PROFILE_IDS.remote }, h("input", { id: PROFILE_IDS.remote, type: "checkbox", checked: profile.cur.remote,
+        onchange: (e) => { profile.cur.remote = e.target.checked; profile.status = ""; syncSave(); } }), " Remote jobs accepted"))
+    : null;
+  return h("div", { class: "panel" }, h("h3", {}, heading), h("div", { class: "muted" }, helper),
+    hint && h("div", { class: "muted" }, "Matches whole words or phrases, ignoring case. 'sales' matches 'Sales Engineer' but not 'Salesforce Developer'."),
+    h("div", { class: "chips" }, chips),
+    h("div", {}, input, " ", h("button", { type: "button", onclick: () => addKeyword(field) }, "Add")),
+    h("div", { class: "msg", role: "alert" }, err || ""), extra);
+}
+function renderProfile() {
+  const root = $("page-profile");
+  root.replaceChildren();
+  if (profile.loading) return root.append(h("p", {}, "Loading profile..."));
+  if (profile.loadError) return root.append(h("p", { class: "msg" }, "Could not load profile. ", h("button", { onclick: loadProfile }, "Retry")));
+  if (profile.readError) root.append(h("p", { class: "msg", role: "alert" }, profile.readError));
+  for (const [field, heading, helper, hint] of PROFILE_LISTS) root.append(keywordSection(field, heading, helper, hint));
+  const live = h("div", { class: "panel" }, h("h3", {}, "Where I live"),
+    h("div", { class: "muted" }, "Used with your target locations to decide which jobs fit."));
+  for (const [key, label] of PROFILE_PERSONAL) {
+    const err = profile.errors["personal." + key];
+    live.append(h("label", { for: PROFILE_IDS[key] }, label),
+      h("input", { id: PROFILE_IDS[key], type: "text", value: profile.cur.personal[key], "aria-invalid": err ? "true" : false,
+        oninput: (e) => { profile.cur.personal[key] = e.target.value; profile.status = ""; syncSave(); } }),
+      h("div", { class: "msg", role: "alert" }, err || ""));
+  }
+  root.append(live,
+    h("p", {}, h("button", { id: "p-save", class: "primary", disabled: profile.readError ? true : (!profileDirty() || profile.saving), onclick: saveProfile }, "Save"),
+      " ", h("span", { id: "p-status", role: "status", class: /^Could not/.test(profile.status) ? "msg" : "muted" }, profile.status)));
+  if (profile.readError) $("p-save").disabled = true;
+  if (profile.focus) { const el = $(profile.focus); if (el) el.focus(); profile.focus = null; }
+}
+function initStatusFilter() {
+  const sel = $("f-status");
+  sel.append(h("option", { value: "" }, "All except dropped"), STATUSES.map((s) => h("option", { value: s }, s)));
+}
+
 /* ---------- tabs, polling, startup ---------- */
 function showTab(name) {
   state.tab = name;
-  for (const t of ["tickets", "blocked", "answers", "resumes", "runs"]) {
+  for (const t of ["tickets", "blocked", "answers", "resumes", "runs", "profile"]) {
     $("tab-" + t).setAttribute("aria-selected", String(t === name));
     $("page-" + t).classList.toggle("hidden", t !== name);
   }
@@ -583,6 +705,7 @@ function showTab(name) {
   if (name === "answers") loadAnswers();
   if (name === "resumes") loadResumes();
   if (name === "runs") { loadRuns(); loadStageStatus(); }
+  if (name === "profile" && !profileDirty()) loadProfile();
   if (name === "tickets") loadTickets();
   mirrorUrl();
 }
@@ -600,8 +723,9 @@ async function poll() {
   } catch (e) { setLive(false); }
 }
 async function init() {
+  initStatusFilter();
   readUrl();
-  for (const t of ["tickets", "blocked", "answers", "resumes", "runs"]) $("tab-" + t).addEventListener("click", () => showTab(t));
+  for (const t of ["tickets", "blocked", "answers", "resumes", "runs", "profile"]) $("tab-" + t).addEventListener("click", () => showTab(t));
   for (const s of RUN_STAGES) $("run-" + s).addEventListener("click", () => startStage(s));
   $("btn-board").addEventListener("click", () => { state.view = "board"; mirrorUrl(); renderTickets(); });
   $("btn-list").addEventListener("click", () => { state.view = "list"; mirrorUrl(); renderTickets(); });
