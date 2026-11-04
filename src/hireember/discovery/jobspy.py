@@ -26,6 +26,7 @@ except ImportError:  # python-jobspy is installed separately (pip install --no-d
 
 from hireember import config
 from hireember.database import get_connection, init_db
+from hireember.intake import DropTally, JobFilter, mark_dropped
 
 log = logging.getLogger(__name__)
 
@@ -84,51 +85,15 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
                 raise
 
 
-# -- Location filtering ------------------------------------------------------
-
-def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
-    """Extract accept/reject location lists from search config.
-
-    Falls back to sensible defaults if not defined in the YAML.
-    """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter.
-
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
-    """
-    if not location:
-        return True  # unknown location -- keep it, let scorer decide
-
-    loc = location.lower()
-
-    # Remote jobs always OK
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    # Reject non-remote matches
-    for r in reject:
-        if r.lower() in loc:
-            return False
-
-    # Accept matches
-    for a in accept:
-        if a.lower() in loc:
-            return True
-
-    # No match -- reject unknown
-    return False
-
-
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
-def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
-    """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
+def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str,
+                         flt: JobFilter | None = None,
+                         tally: DropTally | None = None) -> tuple[int, int]:
+    """Store JobSpy DataFrame results into the DB. Returns (new, existing).
+
+    With a filter, new rows it rejects are stored and marked as dropped (not counted as new).
+    """
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -178,6 +143,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             full_description = description
             detail_scraped_at = now
 
+        reason = None
+        if flt is not None and conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
+            reason = flt.reason(title, location_str)
+
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
@@ -186,7 +155,11 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 (url, title, salary, description, location_str, site_label, strategy, now,
                  full_description, apply_url, detail_scraped_at),
             )
-            new += 1
+            if reason:
+                conn.commit()
+                mark_dropped(conn, url, reason, title, tally)
+            else:
+                new += 1
         except sqlite3.IntegrityError:
             existing += 1
 
@@ -204,9 +177,9 @@ def _run_one_search(
     proxy_config: dict | None,
     defaults: dict,
     max_retries: int,
-    accept_locs: list[str],
-    reject_locs: list[str],
     glassdoor_map: dict,
+    flt: JobFilter | None = None,
+    tally: DropTally | None = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -266,7 +239,7 @@ def _run_one_search(
 
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
-        return {"new": 0, "existing": 0, "errors": 1, "filtered": 0, "total": 0, "label": label}
+        return {"new": 0, "existing": 0, "errors": 1, "dropped": 0, "total": 0, "label": label}
 
     import pandas as pd
     import warnings
@@ -276,25 +249,24 @@ def _run_one_search(
 
     if len(df) == 0:
         log.info("[%s] 0 results", label)
-        return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label}
+        return {"new": 0, "existing": 0, "errors": 0, "dropped": 0, "total": 0, "label": label}
 
-    # Filter by location before storing
     before = len(df)
-    df = df[df.apply(lambda row: _location_ok(
-        str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
-        accept_locs, reject_locs,
-    ), axis=1)]
-    filtered = before - len(df)
-
+    local = DropTally()
     conn = get_connection()
-    new, existing = store_jobspy_results(conn, df, s["query"])
+    new, existing = store_jobspy_results(conn, df, s["query"], flt=flt, tally=local)
+    if tally is not None:
+        tally.items.extend(local.items)
+        for kind, n in local.counts.items():
+            tally.counts[kind] = tally.counts.get(kind, 0) + n
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
-    if filtered:
-        msg += f", {filtered} filtered (location)"
+    if local.total:
+        msg += f", {local.total} dropped"
     log.info(msg)
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    return {"new": new, "existing": existing, "errors": 0, "dropped": local.total, "total": before,
+            "label": label}
 
 
 # -- Single query search -----------------------------------------------------
@@ -358,8 +330,9 @@ def search_jobs(
             log.info("  %s: %d", site, count)
 
     conn = init_db()
-    new, existing = store_jobspy_results(conn, df, query)
-    log.info("Stored: %d new, %d already in DB", new, existing)
+    tally = DropTally()
+    new, existing = store_jobspy_results(conn, df, query, flt=JobFilter.load(), tally=tally)
+    log.info("Stored: %d new, %d already in DB, %d dropped", new, existing, tally.total)
 
     db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     pending = conn.execute("SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL").fetchone()[0]
@@ -387,19 +360,22 @@ def _full_crawl(
         log.error("%s", e)
         conn = init_db()
         db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0, "error": str(e)}
+        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0, "error": str(e),
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
     if not sites:
         log.error("No JobSpy sites configured; skipping JobSpy crawl")
         conn = init_db()
         db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0}
+        return {"new": 0, "existing": 0, "errors": 0, "db_total": db_total, "queries": 0,
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
     locs = search_cfg.get("locations", [])
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
-    accept_locs, reject_locs = _load_location_config(search_cfg)
+    flt = JobFilter.load(search_cfg)
+    tally = DropTally()
 
     if tiers:
         queries = [q for q in queries if q.get("tier") in tiers]
@@ -434,7 +410,7 @@ def _full_crawl(
         result = _run_one_search(
             s, sites, results_per_site, hours_old,
             proxy_config, defaults, max_retries,
-            accept_locs, reject_locs, glassdoor_map,
+            glassdoor_map, flt, tally,
         )
         completed += 1
         total_new += result["new"]
@@ -458,6 +434,8 @@ def _full_crawl(
         "errors": total_errors,
         "db_total": db_total,
         "queries": len(searches),
+        "dropped": dict(tally.counts),
+        "hint": tally.hint(kept=total_new),
     }
 
 
@@ -481,7 +459,8 @@ def run_discovery(cfg: dict | None = None) -> dict:
 
     if not cfg:
         log.warning("No search configuration found. Run `hireember init` to create one.")
-        return {"new": 0, "existing": 0, "errors": 0, "db_total": 0, "queries": 0}
+        return {"new": 0, "existing": 0, "errors": 0, "db_total": 0, "queries": 0,
+                "dropped": {"title": 0, "location": 0}, "hint": ""}
 
     proxy = cfg.get("proxy")
     sites = cfg.get("sites")
